@@ -279,7 +279,27 @@ function renderCleanerOrders(list){
 }
 
 function takeOrder(index){
-  alert("Заказ взят (логика будет добавлена дальше)")
+
+  fetch(API_BASE + "/cleaner/take_order", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      order_index: index,
+      cleaner_id: user_id
+    })
+  })
+  .then(r => r.json())
+  .then(res => {
+    if(res.ok){
+      alert("✅ Заказ взят")
+      cleanerOrders() // обновляем список
+    } else {
+      alert("❌ Не удалось взять заказ")
+    }
+  })
+  .catch(() => {
+    alert("❌ Ошибка соединения")
+  })
 }
 
 /* ============ ЗАКАЗ ============ */
