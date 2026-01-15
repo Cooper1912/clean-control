@@ -1,6 +1,7 @@
 import httpx
 import asyncio
 import os
+import json
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 
@@ -12,6 +13,7 @@ APPROVED_CLEANERS = set()
 CLEANER_REQUESTS = {}
 
 ORDERS = []
+PHOTO_CONTEXT = {}
 
 
 app = FastAPI()
@@ -1058,11 +1060,11 @@ async def order(req: Request):
         "status": "new",
         "comment": data.get("comment", ""),
         "photos": {
-        "before": [],
-        "after": []
+            "before": [],
+            "after": []
         },
         **data
-}
+    }
 
     ORDERS.append(order_obj)
 
@@ -1224,3 +1226,57 @@ async def order_photo(req: Request):
             return {"ok": True}
 
     return {"error": "order not found"}
+
+@app.post("/webhook")
+async def telegram_webhook(request: Request):
+    data = await request.json()
+
+    message = data.get("message", {})
+
+    # 1. WebAppData (кнопка ДО / ПОСЛЕ)
+    web_app_data = message.get("web_app_data")
+    if web_app_data:
+        try:
+            payload = json.loads(web_app_data["data"])
+            if payload.get("action") == "photo":
+                PHOTO_CONTEXT[message["from"]["id"]] = {
+                    "order_id": payload["order_id"],
+                    "kind": payload["kind"]
+                }
+        except Exception as e:
+            print("WebAppData error:", e)
+
+    # 2. Фото
+    if "photo" in message:
+        await handle_photo(message)
+
+    return {"ok": True}
+
+async def handle_photo(message):
+    user_id = message["from"]["id"]
+
+    if user_id not in PHOTO_CONTEXT:
+        return
+
+    ctx = PHOTO_CONTEXT.pop(user_id)
+    order_id = ctx["order_id"]
+    kind = ctx["kind"]
+
+    file_id = message["photo"][-1]["file_id"]
+
+    for o in ORDERS:
+        if o["id"] == order_id:
+            o["photos"][kind].append(file_id)
+
+            await send_to_telegram(
+                f"📸 Фото {'ДО' if kind=='before' else 'ПОСЛЕ'}\n"
+                f"Заказ #{order_id}"
+            )
+
+            await send_message_to_user(
+                o["client_id"],
+                f"📸 Клинер загрузил фото "
+                f"{'ДО' if kind=='before' else 'ПОСЛЕ'}\n"
+                f"Заказ #{order_id}"
+            )
+            break
