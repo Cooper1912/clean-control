@@ -10,11 +10,9 @@ ADMIN_ID = int(os.getenv("ADMIN_ID"))
 
 APPROVED_CLEANERS = set()
 CLEANER_REQUESTS = {}
-ACTIVE_ORDERS = []   # все заказы, которые можно взять
-AVAILABLE_ORDERS = []
 
-USER_ORDERS = {}
-USER_ORDERS_DATA = {}
+ORDERS = []
+
 
 app = FastAPI()
 
@@ -267,7 +265,7 @@ function renderCleanerOrders(list){
         <b>${o.price} ₽</b>
 
         <div class="btn" style="margin-top:10px"
-          onclick="takeOrder(${i})">
+          onclick="takeOrder(${o.id})"
           🖐 Взять заказ
         </div>
       </div>
@@ -278,13 +276,12 @@ function renderCleanerOrders(list){
   screen.innerHTML = html
 }
 
-function takeOrder(index){
-
+function takeOrder(orderId){
   fetch(API_BASE + "/cleaner/take_order", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      order_index: index,
+      order_id: orderId,
       cleaner_id: user_id
     })
   })
@@ -292,13 +289,10 @@ function takeOrder(index){
   .then(res => {
     if(res.ok){
       alert("✅ Заказ взят")
-      cleanerOrders() // обновляем список
+      cleanerOrders()
     } else {
       alert("❌ Не удалось взять заказ")
     }
-  })
-  .catch(() => {
-    alert("❌ Ошибка соединения")
   })
 }
 
@@ -719,38 +713,33 @@ async def send_to_telegram(text: str):
 async def order(req: Request):
     data = await req.json()
 
-    uid = str(data.get("user_id", "unknown"))
-    USER_ORDERS_DATA.setdefault(uid, [])
+    order_id = len(ORDERS) + 1
 
-    if len(USER_ORDERS_DATA[uid]) >= 2:
-        return {"error": "limit"}
+    order_obj = {
+        "id": order_id,
+        "client_id": data["user_id"],
+        "cleaner_id": None,
+        "status": "new",  # new | taken | on_way | cleaning | done
+        "comment": data.get("comment", ""),
+        **data
+    }
 
-    USER_ORDERS_DATA[uid].append(data)
-    order_for_cleaners = data.copy()
-    order_for_cleaners["taken_by"] = None
-
-    AVAILABLE_ORDERS.append(order_for_cleaners)
-
-    ACTIVE_ORDERS.append({
-        **data,
-        "status": "new"
-    })
+    ORDERS.append(order_obj)
 
     text = (
-        "🧹 Новый заказ\n\n"
+        f"🧹 Новый заказ #{order_id}\n\n"
         f"Тип: {data.get('type')}\n"
         f"Имя: {data.get('name')}\n"
         f"Телефон: {data.get('phone')}\n"
         f"Адрес: {data.get('address')}\n"
         f"Дата: {data.get('date')} {data.get('time')}\n"
-        f"Метраж: {data.get('area')} м²\n"
-        f"Цена: {data.get('price')} ₽"
+        f"Цена: {data.get('price')} ₽\n"
+        f"Комментарий: {data.get('comment', '—')}"
     )
 
-    # 🔥 ЖЁСТКИЙ FIRE-AND-FORGET (НЕ БЛОКИРУЕТ ЗАКАЗ)
     asyncio.create_task(send_to_telegram(text))
 
-    return {"ok": True}
+    return {"ok": True, "order_id": order_id}
 
 @app.post("/support")
 async def support(req: Request):
@@ -769,42 +758,40 @@ async def support(req: Request):
 
 @app.get("/my_orders")
 async def my_orders(user_id: int):
-    return USER_ORDERS_DATA.get(str(user_id), [])
+    return [
+        o for o in ORDERS
+        if o.get("client_id") == user_id
+    ]
 
 @app.get("/cleaner/orders")
 async def cleaner_orders(user_id: int):
     if user_id not in APPROVED_CLEANERS:
         return []
 
-    return [o for o in AVAILABLE_ORDERS if o["taken_by"] is None]
+    return [o for o in ORDERS if o["cleaner_id"] is None]
 
 @app.post("/cleaner/take_order")
 async def take_order(req: Request):
     data = await req.json()
 
-    order_index = data.get("order_index")
+    order_id = data.get("order_id")
     cleaner_id = data.get("cleaner_id")
 
     if cleaner_id not in APPROVED_CLEANERS:
         return {"error": "not approved"}
 
-    if order_index is None or order_index >= len(AVAILABLE_ORDERS):
-        return {"error": "order not found"}
+    for o in ORDERS:
+        if o["id"] == order_id and o["cleaner_id"] is None:
+            o["cleaner_id"] = cleaner_id
+            o["status"] = "taken"
 
-    order = AVAILABLE_ORDERS[order_index]
+            await send_to_telegram(
+                f"🧹 Заказ #{order_id} взят клинером\n"
+                f"Клинер: {cleaner_id}\n"
+                f"Адрес: {o.get('address')}"
+            )
 
-    if order["taken_by"] is not None:
-        return {"error": "already taken"}
+            return {"ok": True}
 
-    # 🔒 Закрепляем заказ
-    order["taken_by"] = cleaner_id
-
-    await send_to_telegram(
-        f"🧹 Заказ взят клинером\n"
-        f"Клинер: {cleaner_id}\n"
-        f"Адрес: {order.get('address')}\n"
-        f"Дата: {order.get('date')} {order.get('time')}"
-    )
-
-    return {"ok": True}
+    return {"error": "order not found"}
 
