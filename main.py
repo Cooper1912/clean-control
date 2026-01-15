@@ -156,7 +156,7 @@ function clientMenu(){
 
       if (d.state === "approved") {
       btn.innerText = "📦 Заказы клинера"
-      btn.onclick = () => cleanerOrders()
+      btn.onclick = () => cleanerAvailable()
       }
 
       if (d.state === "pending") {
@@ -698,6 +698,50 @@ function sendSupport(){
   })
 }
 
+function cleanerAvailable(){
+  screen.innerHTML = `
+    <h3>📦 Доступные заказы</h3>
+    <p>Загружаем…</p>
+  `
+
+  fetch(API_BASE + "/cleaner/orders?user_id=" + user_id)
+    .then(r => r.json())
+    .then(list => {
+      if(!list || list.length === 0){
+        screen.innerHTML = `
+          <h3>📦 Доступные заказы</h3>
+          <p>Пока нет заказов</p>
+          <div class="btn" onclick="tap(); cleanerOrders()">Мои активные</div>
+          <div class="btn" onclick="tap(); clientMenu()">← В меню</div>
+        `
+        return
+      }
+
+      let html = "<h3>📦 Доступные заказы</h3>"
+
+      list.forEach(o => {
+        html += `
+          <div style="border:1px solid #ddd;padding:12px;margin:12px 0;border-radius:12px;">
+            <b>${o.type}</b><br>
+            ${o.address}<br>
+            ${o.date} ${o.time}<br>
+            <b>${o.price} ₽</b>
+
+            <div class="btn" onclick="takeOrder(${o.id})">
+              🖐 Взять заказ
+            </div>
+          </div>
+        `
+      })
+
+      html += `
+        <div class="btn" onclick="tap(); cleanerOrders()">Мои активные</div>
+        <div class="btn" onclick="tap(); clientMenu()">← В меню</div>
+      `
+      screen.innerHTML = html
+    })
+}
+
 start()
 </script>
 </body>
@@ -706,7 +750,7 @@ start()
 
 @app.get("/cleaner/state")
 async def cleaner_state(user_id: int):
-    if user_id in APPROVED_CLEANERS:
+    if int(user_id) in APPROVED_CLEANERS:
         return {"state": "approved"}
 
     if str(user_id) in CLEANER_REQUESTS:
@@ -716,7 +760,7 @@ async def cleaner_state(user_id: int):
 
 @app.get("/cleaner/approve")
 async def approve_cleaner(user_id: int):
-    APPROVED_CLEANERS.add(user_id)
+    APPROVED_CLEANERS.add(int(user_id))
     CLEANER_REQUESTS.pop(str(user_id), None)
 
     await send_to_telegram(f"✅ Клинер {user_id} одобрен")
@@ -816,7 +860,7 @@ async def my_orders(user_id: int):
 
 @app.get("/cleaner/orders")
 async def cleaner_orders(user_id: int):
-    if user_id not in APPROVED_CLEANERS:
+    if int(user_id) not in APPROVED_CLEANERS:
         return []
 
     return [o for o in ORDERS if o["cleaner_id"] is None]
@@ -826,7 +870,7 @@ async def take_order(req: Request):
     data = await req.json()
 
     order_id = data.get("order_id")
-    cleaner_id = data.get("cleaner_id")
+    cleaner_id = int(data.get("cleaner_id"))
 
     if cleaner_id not in APPROVED_CLEANERS:
         return {"error": "not approved"}
