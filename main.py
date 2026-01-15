@@ -1,10 +1,13 @@
 import httpx
 import asyncio
+import os
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 
-BOT_TOKEN = "8414415084:AAHJfqYcMWd6_5EoGDJHXf2jpo52Lve-cv4"
-ADMIN_ID = 8176375746
+
+BOT_TOKEN = os.getenv("CLIENT_BOT_TOKEN")
+ADMIN_ID = int(os.getenv("ADMIN_ID"))
+
 APPROVED_CLEANERS = set()
 CLEANER_REQUESTS = {}
 
@@ -70,7 +73,7 @@ input,select{width:100%;padding:14px;margin-top:10px;border-radius:10px;border:1
 <div id="screen" class="card"></div>
 
 <script>
-const API_BASE = "https://aleta-retrogressive-miserly.ngrok-free.dev"
+const API_BASE = window.location.origin
 const tg = window.Telegram?.WebApp || null
 
 const user = tg?.initDataUnsafe?.user || {}
@@ -692,12 +695,3 @@ async def support(req: Request):
 async def my_orders(user_id: int):
     return USER_ORDERS_DATA.get(str(user_id), [])
 
-import os
-from fastapi import FastAPI, Request
-from aiogram import Bot, Dispatcher
-from aiogram.types import Update
-
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
-
-app = FastAPI()
