@@ -11,6 +11,7 @@ ADMIN_ID = int(os.getenv("ADMIN_ID"))
 APPROVED_CLEANERS = set()
 CLEANER_REQUESTS = {}
 ACTIVE_ORDERS = []   # все заказы, которые можно взять
+AVAILABLE_ORDERS = []
 
 USER_ORDERS = {}
 USER_ORDERS_DATA = {}
@@ -680,6 +681,10 @@ async def order(req: Request):
         return {"error": "limit"}
 
     USER_ORDERS_DATA[uid].append(data)
+    order_for_cleaners = data.copy()
+    order_for_cleaners["taken_by"] = None
+
+    AVAILABLE_ORDERS.append(order_for_cleaners)
 
     ACTIVE_ORDERS.append({
         **data,
@@ -726,8 +731,5 @@ async def cleaner_orders(user_id: int):
     if user_id not in APPROVED_CLEANERS:
         return []
 
-    return [
-        o for o in ACTIVE_ORDERS
-        if o.get("status") == "new"
-    ]
+    return [o for o in AVAILABLE_ORDERS if o["taken_by"] is None]
 
