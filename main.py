@@ -151,11 +151,19 @@ function clientMenu(){
   fetch(API_BASE + "/cleaner/state?user_id=" + user_id)
     .then(r => r.json())
     .then(d => {
-      if(d.state === "approved"){
-        const btn = document.getElementById("cleanerBtn")
-        if(btn) btn.style.display = "none"
+      const btn = document.getElementById("cleanerBtn")
+      if (!btn) return
+
+      if (d.state === "approved") {
+      btn.innerText = "📦 Заказы клинера"
+      btn.onclick = () => cleanerOrders()
       }
-    })
+
+      if (d.state === "pending") {
+      btn.innerText = "⏳ Заявка на рассмотрении"
+      btn.onclick = () => {}
+    }
+  })
 }
 
 function cleanerIntro(){
@@ -212,6 +220,16 @@ function supportForm(){
     <div class="btn" onclick="tap(); supportIntro()">
       ← Назад
     </div>
+  `
+}
+
+function cleanerOrders(){
+  screen.innerHTML = `
+    <h3>📦 Заказы для клинера</h3>
+
+    <p>Пока нет доступных заказов</p>
+
+    <div class="btn" onclick="tap(); clientMenu()">← В меню</div>
   `
 }
 
