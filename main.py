@@ -758,3 +758,33 @@ async def cleaner_orders(user_id: int):
 
     return [o for o in AVAILABLE_ORDERS if o["taken_by"] is None]
 
+@app.post("/cleaner/take_order")
+async def take_order(req: Request):
+    data = await req.json()
+
+    order_index = data.get("order_index")
+    cleaner_id = data.get("cleaner_id")
+
+    if cleaner_id not in APPROVED_CLEANERS:
+        return {"error": "not approved"}
+
+    if order_index is None or order_index >= len(AVAILABLE_ORDERS):
+        return {"error": "order not found"}
+
+    order = AVAILABLE_ORDERS[order_index]
+
+    if order["taken_by"] is not None:
+        return {"error": "already taken"}
+
+    # 🔒 Закрепляем заказ
+    order["taken_by"] = cleaner_id
+
+    await send_to_telegram(
+        f"🧹 Заказ взят клинером\n"
+        f"Клинер: {cleaner_id}\n"
+        f"Адрес: {order.get('address')}\n"
+        f"Дата: {order.get('date')} {order.get('time')}"
+    )
+
+    return {"ok": True}
+
