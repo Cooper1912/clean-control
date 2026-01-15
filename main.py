@@ -691,3 +691,23 @@ async def support(req: Request):
 @app.get("/my_orders")
 async def my_orders(user_id: int):
     return USER_ORDERS_DATA.get(str(user_id), [])
+
+import os
+from fastapi import FastAPI, Request
+from aiogram import Bot, Dispatcher
+from aiogram.types import Update
+
+BOT_TOKEN = os.getenv("CLIENT_BOT_TOKEN")
+
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher()
+
+app = FastAPI()
+
+
+@app.post("/webhook")
+async def telegram_webhook(request: Request):
+    data = await request.json()
+    update = Update(**data)
+    await dp.feed_update(bot, update)
+    return {"ok": True}
