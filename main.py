@@ -10,6 +10,7 @@ ADMIN_ID = int(os.getenv("ADMIN_ID"))
 
 APPROVED_CLEANERS = set()
 CLEANER_REQUESTS = {}
+ACTIVE_ORDERS = []   # все заказы, которые можно взять
 
 USER_ORDERS = {}
 USER_ORDERS_DATA = {}
@@ -680,6 +681,11 @@ async def order(req: Request):
 
     USER_ORDERS_DATA[uid].append(data)
 
+    ACTIVE_ORDERS.append({
+        **data,
+        "status": "new"
+    })
+
     text = (
         "🧹 Новый заказ\n\n"
         f"Тип: {data.get('type')}\n"
@@ -714,4 +720,14 @@ async def support(req: Request):
 @app.get("/my_orders")
 async def my_orders(user_id: int):
     return USER_ORDERS_DATA.get(str(user_id), [])
+
+@app.get("/cleaner/orders")
+async def cleaner_orders(user_id: int):
+    if user_id not in APPROVED_CLEANERS:
+        return []
+
+    return [
+        o for o in ACTIVE_ORDERS
+        if o.get("status") == "new"
+    ]
 
