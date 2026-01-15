@@ -804,6 +804,19 @@ async def send_to_telegram(text: str):
     except Exception as e:
         print("Telegram error:", e)
 
+async def send_message_to_user(user_id: int, text: str):
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            await client.post(
+                f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                    json={
+                        "chat_id": user_id,
+                        "text": text
+                    }
+            )
+    except Exception as e:
+        print("User notify error:", e)
+
 @app.post("/order")
 async def order(req: Request):
     data = await req.json()
@@ -928,15 +941,39 @@ async def cleaner_my_orders(user_id: int):
 @app.post("/order/status")
 async def order_status(req: Request):
     data = await req.json()
+
     order_id = data["order_id"]
     status = data["status"]
+
+    status_text = {
+        "on_way": "🚗 Клинер выехал",
+        "cleaning": "🧽 Клинер приступил к уборке",
+        "done": "✅ Уборка завершена"
+    }.get(status, status)
 
     for o in ORDERS:
         if o["id"] == order_id:
             o["status"] = status
-            await send_to_telegram(
-                f"📦 Заказ #{order_id} → {status}"
+
+            client_id = o.get("client_id")
+            cleaner_id = o.get("cleaner_id")
+
+            # 🔔 Уведомление клиенту
+            await send_message_to_user(
+                client_id,
+                f"{status_text}\n\n"
+                f"🧹 Заказ #{order_id}\n"
+                f"📍 {o.get('address')}\n"
+                f"🕒 {o.get('date')} {o.get('time')}"
             )
+
+            # 🔔 Уведомление админу
+            await send_to_telegram(
+                f"📦 Статус заказа #{order_id}\n"
+                f"{status_text}\n"
+                f"Клинер: {cleaner_id}"
+            )
+
             return {"ok": True}
 
     return {"error": "not found"}
