@@ -58,6 +58,28 @@ input,select{width:100%;padding:14px;margin-top:10px;border-radius:10px;border:1
   100%{ transform: translateY(-100vh) rotate(360deg); }
 }
 
+/* ===== Screen animations ===== */
+
+.fade-enter {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.fade-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity .25s ease, transform .25s ease;
+}
+
+.fade-exit {
+  opacity: 1;
+}
+
+.fade-exit-active {
+  opacity: 0;
+  transition: opacity .15s ease;
+}
+
 </style>
 </head>
 <body>
@@ -85,6 +107,26 @@ function tap(){
   try {
     haptic?.impactOccurred("light")
   } catch (e) {}
+}
+
+function animateScreen(html){
+  screen.classList.remove("fade-enter", "fade-enter-active")
+
+  screen.classList.add("fade-exit")
+  setTimeout(() => {
+    screen.classList.add("fade-exit-active")
+  }, 10)
+
+  setTimeout(() => {
+    screen.innerHTML = html
+
+    screen.classList.remove("fade-exit", "fade-exit-active")
+    screen.classList.add("fade-enter")
+
+    requestAnimationFrame(() => {
+      screen.classList.add("fade-enter-active")
+    })
+  }, 150)
 }
 
 
@@ -125,7 +167,7 @@ function clientMenu(){
 
     <div class="btn" onclick="tap(); chooseType()">🧹 Заказать уборку</div>
     <div class="btn" onclick="tap(); myOrders()">📋 Мои заказы</div>
-    <div class="btn">🏠 Мои адреса</div>
+    <div class="btn" onclick="tap(); infoMenu()">ℹ️ Как проходит уборка</div>
 
     <hr style="margin:16px 0;opacity:.2">
 
@@ -221,7 +263,7 @@ function cleanerIntro(){
 }
 
 function supportIntro(){
-  screen.innerHTML = `
+  animateScreen(`
     <h3>🆘 Поддержка</h3>
 
     <div style="margin:15px 0;line-height:1.6">
@@ -236,6 +278,132 @@ function supportIntro(){
     <div class="btn" onclick="tap(); clientMenu()">
       ← Назад
     </div>
+  `)
+}
+
+function infoMenu(){
+  screen.innerHTML = `
+    <h3>ℹ️ Информация об уборке</h3>
+
+    <div class="btn" onclick="tap(); infoFlow()">🧹 Как проходит уборка</div>
+    <div class="btn" onclick="tap(); infoSupport()">🧽 Поддерживающая уборка</div>
+    <div class="btn" onclick="tap(); infoGeneral()">✨ Генеральная уборка</div>
+    <div class="btn" onclick="tap(); infoExtras()">🧰 Дополнительные услуги</div>
+    <div class="btn" onclick="tap(); infoFaq()">❓ Частые вопросы</div>
+
+    <div class="btn" onclick="tap(); clientMenu()">← В меню</div>
+  `
+}
+
+function infoFlow(){
+  screen.innerHTML = `
+    <h3>🧹 Как проходит уборка</h3>
+
+    <p>
+      1️⃣ Вы оформляете заказ<br>
+      2️⃣ Клинер принимает заказ<br>
+      3️⃣ Клинер выезжает<br>
+      4️⃣ Проводится уборка<br>
+      5️⃣ Заказ завершается
+    </p>
+
+    <p style="opacity:.7">
+      Статус уборки всегда отображается<br>
+      в разделе «Мои заказы»
+    </p>
+
+    <div class="btn" onclick="tap(); infoMenu()">← Назад</div>
+  `
+}
+
+function infoSupport(){
+  screen.innerHTML = `
+    <h3>🧽 Поддерживающая уборка</h3>
+
+    <p>
+      Подходит для регулярного поддержания чистоты.
+    </p>
+
+    <p>
+      ✔️ Полы и плинтусы<br>
+      ✔️ Пыль с поверхностей<br>
+      ✔️ Кухонные поверхности<br>
+      ✔️ Санузел<br>
+      ✔️ Зеркала
+    </p>
+
+    <p style="opacity:.7">
+      Не включает сложные загрязнения
+    </p>
+
+    <div class="btn" onclick="tap(); infoMenu()">← Назад</div>
+  `
+}
+
+function infoGeneral(){
+  screen.innerHTML = `
+    <h3>✨ Генеральная уборка</h3>
+
+    <p>
+      Глубокая уборка всей квартиры.
+    </p>
+
+    <p>
+      ✔️ Всё из поддерживающей<br>
+      ✔️ Труднодоступные места<br>
+      ✔️ Удаление стойких загрязнений
+    </p>
+
+    <p style="opacity:.7">
+      Рекомендуем после долгого перерыва
+    </p>
+
+    <div class="btn" onclick="tap(); infoMenu()">← Назад</div>
+  `
+}
+
+function infoExtras(){
+  screen.innerHTML = `
+    <h3>🧰 Дополнительные услуги</h3>
+
+    <p>
+      🪟 Мытьё окон<br>
+      🧊 Холодильник<br>
+      🔥 Духовка<br>
+      🌀 Вытяжка<br>
+      🧺 Шкафы внутри<br>
+      🧼 Балкон
+    </p>
+
+    <p style="opacity:.7">
+      Допы добавляются к заказу
+      и влияют на цену
+    </p>
+
+    <div class="btn" onclick="tap(); infoMenu()">← Назад</div>
+  `
+}
+
+function infoFaq(){
+  screen.innerHTML = `
+    <h3>❓ Частые вопросы</h3>
+
+    <p>
+      <b>Нужно ли быть дома?</b><br>
+      Нет, можно оставить ключи.
+    </p>
+
+    <p>
+      <b>Можно ли с животными?</b><br>
+      Да, просто укажите это в комментарии.
+    </p>
+
+    <p>
+      <b>Можно ли оставить пожелания?</b><br>
+      Да, при оформлении заказа.
+    </p>
+
+    <div class="btn" onclick="tap(); infoMenu()">← Назад</div>
   `
 }
 
@@ -314,7 +482,15 @@ screen.innerHTML = `
   <div class="btn" onclick="setStatus(${o.id}, 'on_way')">🚗 Выехал</div>
   <div class="btn" onclick="setStatus(${o.id}, 'cleaning')">🧽 Начал уборку</div>
   <div class="btn" onclick="setStatus(${o.id}, 'done')">✅ Завершил</div>
+  <hr style="margin:16px 0;opacity:.2">
 
+  <div class="btn" onclick="uploadPhoto(${o.id}, 'before')">
+  📸 Фото ДО уборки
+  </div>
+
+  <div class="btn" onclick="uploadPhoto(${o.id}, 'after')">
+  📸 Фото ПОСЛЕ уборки
+  </div>
   <div class="btn" onclick="tap(); clientMenu()">← В меню</div>
 `
 }
@@ -775,6 +951,25 @@ function cleanerAvailable(){
     })
 }
 
+function uploadPhoto(orderId, kind){
+  if(!tg){
+    alert("Откройте через Telegram")
+    return
+  }
+
+  tg.sendData(JSON.stringify({
+    action: "photo",
+    order_id: orderId,
+    kind: kind
+  }))
+
+  alert(
+    kind === "before"
+      ? "📸 Отправьте фото ДО уборки в чат"
+      : "📸 Отправьте фото ПОСЛЕ уборки в чат"
+  )
+}
+
 start()
 </script>
 </body>
@@ -860,10 +1055,14 @@ async def order(req: Request):
         "id": order_id,
         "client_id": data["user_id"],
         "cleaner_id": None,
-        "status": "new",  # new | taken | on_way | cleaning | done
+        "status": "new",
         "comment": data.get("comment", ""),
+        "photos": {
+        "before": [],
+        "after": []
+        },
         **data
-    }
+}
 
     ORDERS.append(order_obj)
 
@@ -1010,3 +1209,18 @@ async def order_status(req: Request):
             return {"ok": True}
 
     return {"error": "not found"}
+
+@app.post("/order/photo")
+async def order_photo(req: Request):
+    data = await req.json()
+
+    order_id = data["order_id"]
+    photo_type = data["type"]  # before | after
+    file_id = data["file_id"]
+
+    for o in ORDERS:
+        if o["id"] == order_id:
+            o["photos"][photo_type].append(file_id)
+            return {"ok": True}
+
+    return {"error": "order not found"}
