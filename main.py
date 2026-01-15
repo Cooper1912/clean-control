@@ -604,15 +604,17 @@ async def cleaner_state(user_id: int):
 
     return {"state": "new"}
 
-@app.post("/cleaner/approve")
-async def approve_cleaner(req: Request):
-    data = await req.json()
-    uid = int(data["user_id"])
+@app.get("/cleaner/approve")
+async def approve_cleaner(user_id: int):
+    APPROVED_CLEANERS.add(user_id)
+    CLEANER_REQUESTS.pop(str(user_id), None)
 
-    APPROVED_CLEANERS.add(uid)
-    CLEANER_REQUESTS.pop(str(uid), None)
+    await send_to_telegram(f"✅ Клинер {user_id} одобрен")
 
-    return {"ok": True}
+    return {
+        "ok": True,
+        "message": "Клинер одобрен. Можно закрыть страницу."
+    }
 
 @app.post("/cleaner/apply")
 async def cleaner_apply(req: Request):
@@ -627,7 +629,7 @@ async def cleaner_apply(req: Request):
         f"Телефон: {data['phone']}\n"
         f"Район: {data['district']}\n"
         f"Опыт: {data['experience']}\n\n"
-        f"Одобрить: /approve_{uid}"
+        f"Одобрить клинера:\nhttps://clean-control.onrender.com/cleaner/approve?user_id={uid}"
     )
 
     async with httpx.AsyncClient() as client:
