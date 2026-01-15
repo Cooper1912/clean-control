@@ -228,33 +228,58 @@ function supportForm(){
 function cleanerOrders(){
   screen.innerHTML = `
     <h3>📦 Заказы для клинера</h3>
-
-    <p>Пока нет доступных заказов</p>
-
-    <div class="btn" onclick="tap(); clientMenu()">← В меню</div>
+    <p>Загружаем заказы…</p>
   `
+
+  fetch(API_BASE + "/cleaner/orders?user_id=" + user_id)
+    .then(r => r.json())
+    .then(list => {
+      renderCleanerOrders(list)
+    })
+    .catch(() => {
+      screen.innerHTML = `
+        <h3>📦 Заказы для клинера</h3>
+        <p>Ошибка загрузки</p>
+        <div class="btn" onclick="tap(); clientMenu()">← В меню</div>
+      `
+    })
 }
 
-function renderLastOrder(list){
-  const box = document.getElementById("lastOrderBlock")
-  if (!box) return
+function renderCleanerOrders(list){
 
-  if (!list || list.length === 0) {
-    box.innerHTML = "<i>У вас пока нет заказов</i>"
+  if(!list || list.length === 0){
+    screen.innerHTML = `
+      <h3>📦 Заказы для клинера</h3>
+      <p>Пока нет доступных заказов</p>
+      <div class="btn" onclick="tap(); clientMenu()">← В меню</div>
+    `
     return
   }
 
-  const o = list[list.length - 1]
+  let html = "<h3>📦 Доступные заказы</h3>"
 
-  box.style.opacity = 1
-  box.innerHTML = `
-    <div style="background:#f0f7ff;padding:15px;border-radius:12px;margin:15px 0;">
-      <b>${o.type}</b><br>
-      ${o.address}<br>
-      ${o.date} ${o.time}<br>
-      <b>${o.price} ₽</b>
-    </div>
-  `
+  list.forEach((o, i) => {
+    html += `
+      <div style="border:1px solid #ddd;padding:14px;margin:12px 0;border-radius:12px;">
+        <b>${o.type}</b><br>
+        ${o.address}<br>
+        ${o.date} ${o.time}<br>
+        <b>${o.price} ₽</b>
+
+        <div class="btn" style="margin-top:10px"
+          onclick="takeOrder(${i})">
+          🖐 Взять заказ
+        </div>
+      </div>
+    `
+  })
+
+  html += `<div class="btn" onclick="tap(); clientMenu()">← В меню</div>`
+  screen.innerHTML = html
+}
+
+function takeOrder(index){
+  alert("Заказ взят (логика будет добавлена дальше)")
 }
 
 /* ============ ЗАКАЗ ============ */
