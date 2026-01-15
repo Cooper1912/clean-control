@@ -288,30 +288,35 @@ function renderCleanerActive(list){
     return
   }
 
-  const o = list[0]   // один активный заказ
+  const o = list[0]
 
-  screen.innerHTML = `
-    <h3>🧹 Заказ #${o.id}</h3>
+screen.innerHTML = `
+  <h3>🧹 Заказ #${o.id}</h3>
 
-    <b>${o.type}</b><br>
-    ${o.address}<br>
-    ${o.date} ${o.time}<br>
-    <b>${o.price} ₽</b><br><br>
+  <b>${o.type}</b><br><br>
 
-    <div class="btn" onclick="setStatus(${o.id}, 'on_way')">
-      🚗 Выехал
-    </div>
+  📍 <b>Адрес:</b> ${o.address}<br>
+  📐 <b>Метраж:</b> ${o.area} м²<br>
+  📅 <b>Дата:</b> ${o.date}<br>
+  ⏰ <b>Время:</b> ${o.time}<br><br>
 
-    <div class="btn" onclick="setStatus(${o.id}, 'cleaning')">
-      🧽 Начал уборку
-    </div>
+  🧰 <b>Допы:</b><br>
+  ${renderExtrasText(o.extras)}<br><br>
 
-    <div class="btn" onclick="setStatus(${o.id}, 'done')">
-      ✅ Завершил
-    </div>
+  💬 <b>Комментарий клиента:</b><br>
+  ${o.comment || "—"}<br><br>
 
-    <div class="btn" onclick="tap(); clientMenu()">← В меню</div>
-  `
+  📞 <b>Телефон клиента:</b><br>
+  ${o.phone}<br><br>
+
+  💰 <b>Оплата:</b> ${o.price} ₽<br><br>
+
+  <div class="btn" onclick="setStatus(${o.id}, 'on_way')">🚗 Выехал</div>
+  <div class="btn" onclick="setStatus(${o.id}, 'cleaning')">🧽 Начал уборку</div>
+  <div class="btn" onclick="setStatus(${o.id}, 'done')">✅ Завершил</div>
+
+  <div class="btn" onclick="tap(); clientMenu()">← В меню</div>
+`
 }
 
 function setStatus(orderId, status){
@@ -588,6 +593,16 @@ function myOrders(){
     })
 }
 
+function renderExtrasText(extras){
+  if(!extras) return "—"
+  let out = []
+  for(let k in extras){
+    if(extras[k] > 0){
+      out.push(`${k}: ${extras[k]}`)
+    }
+  }
+  return out.length ? out.join("<br>") : "—"
+}
 
 function renderOrdersList(list){
 
@@ -604,11 +619,22 @@ function renderOrdersList(list){
 
   list.forEach(o => {
     html += `
-      <div style="border:1px solid #ddd;padding:10px;margin:10px 0;border-radius:10px;">
-        <b>${o.type}</b><br>
-        ${o.address}<br>
-        ${o.date} ${o.time}<br>
-        <b>${o.price} ₽</b>
+      <div style="border:1px solid #ddd;padding:14px;margin:14px 0;border-radius:12px;">
+        <b>${o.type}</b><br><br>
+
+        📍 <b>Адрес:</b> ${o.address}<br>
+        📐 <b>Метраж:</b> ${o.area} м²<br>
+        📅 <b>Дата:</b> ${o.date}<br>
+        ⏰ <b>Время:</b> ${o.time}<br><br>
+
+        🧰 <b>Допы:</b><br>
+        ${renderExtrasText(o.extras)}<br><br>
+
+        💬 <b>Комментарий:</b><br>
+        ${o.comment || "—"}<br><br>
+
+        💰 <b>Цена:</b> ${o.price} ₽<br>
+        📌 <b>Статус:</b> ${humanStatus(o.status)}
       </div>
     `
   })
