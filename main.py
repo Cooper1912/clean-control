@@ -870,25 +870,52 @@ async def take_order(req: Request):
     data = await req.json()
 
     order_id = data.get("order_id")
-    cleaner_id = int(data.get("cleaner_id"))
+    cleaner_id = data.get("cleaner_id")
 
     if cleaner_id not in APPROVED_CLEANERS:
         return {"error": "not approved"}
 
+    # 1️⃣ Найдём заказ, который пытаются взять
+    order_to_take = None
     for o in ORDERS:
-        if o["id"] == order_id and o["cleaner_id"] is None:
-            o["cleaner_id"] = cleaner_id
-            o["status"] = "taken"
+        if o["id"] == order_id:
+            order_to_take = o
+            break
 
-            await send_to_telegram(
-                f"🧹 Заказ #{order_id} взят клинером\n"
-                f"Клинер: {cleaner_id}\n"
-                f"Адрес: {o.get('address')}"
-            )
+    if not order_to_take:
+        return {"error": "order not found"}
 
-            return {"ok": True}
+    if order_to_take["cleaner_id"] is not None:
+        return {"error": "already taken"}
 
-    return {"error": "order not found"}
+    order_date = order_to_take.get("date")
+
+    # 2️⃣ Считаем, сколько заказов у клинера на эту дату
+    orders_today = [
+        o for o in ORDERS
+        if o.get("cleaner_id") == cleaner_id
+        and o.get("date") == order_date
+        and o.get("status") != "done"
+    ]
+
+    if len(orders_today) >= 4:
+        return {
+            "error": "limit_reached",
+            "message": "❌ Лимит 4 заказа в день"
+        }
+
+    # 3️⃣ Назначаем заказ
+    order_to_take["cleaner_id"] = cleaner_id
+    order_to_take["status"] = "taken"
+
+    await send_to_telegram(
+        f"🧹 Заказ #{order_id} взят клинером\n"
+        f"Клинер: {cleaner_id}\n"
+        f"Дата: {order_date}\n"
+        f"Заказов сегодня: {len(orders_today)+1}/4"
+    )
+
+    return {"ok": True}
 
 @app.get("/cleaner/my_orders")
 async def cleaner_my_orders(user_id: int):
