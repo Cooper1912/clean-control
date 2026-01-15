@@ -166,6 +166,40 @@ function clientMenu(){
   })
 }
 
+function renderLastOrder(list){
+  const box = document.getElementById("lastOrderBlock")
+  if (!box) return
+
+  if (!list || list.length === 0) {
+    box.innerHTML = "<i>У вас пока нет заказов</i>"
+    return
+  }
+
+  const o = list[list.length - 1]
+
+  box.innerHTML = `
+    <div style="background:#f0f7ff;padding:15px;border-radius:12px;margin:15px 0;">
+      <b>${o.type}</b><br>
+      ${o.address}<br>
+      ${o.date} ${o.time}<br>
+      <b>${o.price} ₽</b><br>
+      <small>Статус: ${humanStatus(o.status)}</small>
+    </div>
+  `
+}
+
+function humanStatus(s){
+  return {
+    new: "Создан",
+    taken: "Клинер назначен",
+    on_way: "Клинер выехал",
+    cleaning: "Уборка идёт",
+    done: "Завершено"
+  }[s] || "—"
+}
+
+
+
 function cleanerIntro(){
   screen.innerHTML = `
     <h3>💼 Работа клинером</h3>
@@ -225,55 +259,72 @@ function supportForm(){
 
 function cleanerOrders(){
   screen.innerHTML = `
-    <h3>📦 Заказы для клинера</h3>
-    <p>Загружаем заказы…</p>
+    <h3>📦 Заказы клинера</h3>
+    <p>Загружаем…</p>
   `
 
-  fetch(API_BASE + "/cleaner/orders?user_id=" + user_id)
+  fetch(API_BASE + "/cleaner/my_orders?user_id=" + user_id)
     .then(r => r.json())
     .then(list => {
-      renderCleanerOrders(list)
+      renderCleanerActive(list)
     })
     .catch(() => {
       screen.innerHTML = `
-        <h3>📦 Заказы для клинера</h3>
+        <h3>📦 Заказы клинера</h3>
         <p>Ошибка загрузки</p>
         <div class="btn" onclick="tap(); clientMenu()">← В меню</div>
       `
     })
 }
 
-function renderCleanerOrders(list){
+function renderCleanerActive(list){
 
   if(!list || list.length === 0){
     screen.innerHTML = `
-      <h3>📦 Заказы для клинера</h3>
-      <p>Пока нет доступных заказов</p>
+      <h3>📦 Активные заказы</h3>
+      <p>У вас нет активных заказов</p>
       <div class="btn" onclick="tap(); clientMenu()">← В меню</div>
     `
     return
   }
 
-  let html = "<h3>📦 Доступные заказы</h3>"
+  const o = list[0]   // один активный заказ
 
-  list.forEach((o, i) => {
-    html += `
-      <div style="border:1px solid #ddd;padding:14px;margin:12px 0;border-radius:12px;">
-        <b>${o.type}</b><br>
-        ${o.address}<br>
-        ${o.date} ${o.time}<br>
-        <b>${o.price} ₽</b>
+  screen.innerHTML = `
+    <h3>🧹 Заказ #${o.id}</h3>
 
-        <div class="btn" style="margin-top:10px"
-          onclick="takeOrder(${o.id})"
-          🖐 Взять заказ
-        </div>
-      </div>
-    `
+    <b>${o.type}</b><br>
+    ${o.address}<br>
+    ${o.date} ${o.time}<br>
+    <b>${o.price} ₽</b><br><br>
+
+    <div class="btn" onclick="setStatus(${o.id}, 'on_way')">
+      🚗 Выехал
+    </div>
+
+    <div class="btn" onclick="setStatus(${o.id}, 'cleaning')">
+      🧽 Начал уборку
+    </div>
+
+    <div class="btn" onclick="setStatus(${o.id}, 'done')">
+      ✅ Завершил
+    </div>
+
+    <div class="btn" onclick="tap(); clientMenu()">← В меню</div>
+  `
+}
+
+function setStatus(orderId, status){
+  fetch(API_BASE + "/order/status", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      order_id: orderId,
+      status: status
+    })
+  }).then(() => {
+    cleanerOrders()
   })
-
-  html += `<div class="btn" onclick="tap(); clientMenu()">← В меню</div>`
-  screen.innerHTML = html
 }
 
 function takeOrder(orderId){
@@ -795,3 +846,26 @@ async def take_order(req: Request):
 
     return {"error": "order not found"}
 
+@app.get("/cleaner/my_orders")
+async def cleaner_my_orders(user_id: int):
+    return [
+        o for o in ORDERS
+        if o.get("cleaner_id") == user_id
+        and o.get("status") != "done"
+    ]
+
+@app.post("/order/status")
+async def order_status(req: Request):
+    data = await req.json()
+    order_id = data["order_id"]
+    status = data["status"]
+
+    for o in ORDERS:
+        if o["id"] == order_id:
+            o["status"] = status
+            await send_to_telegram(
+                f"📦 Заказ #{order_id} → {status}"
+            )
+            return {"ok": True}
+
+    return {"error": "not found"}
