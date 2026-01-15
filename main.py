@@ -406,6 +406,11 @@ function askContacts(){
         <option>19:00</option>
     </select>
     <input id="area" placeholder="Метраж м²">
+    <textarea id="comment"
+  placeholder="Комментарий для клинера (ключи, животные, пожелания)"
+  style="width:100%;height:90px;padding:12px;
+         border-radius:10px;border:1px solid #ddd;
+         font-size:15px;margin-top:10px"></textarea>
     <div class="btn" onclick="tap(); goToExtras()">Далее</div>
     <div class="btn" onclick="tap(); chooseType()">Назад</div>
   `
@@ -419,6 +424,7 @@ const flatEl = document.getElementById("flat")
 const dateEl = document.getElementById("date")
 const timeEl = document.getElementById("time")
 const areaEl = document.getElementById("area")
+const commentEl = document.getElementById("comment")
 
 if(
   !nameEl || !phoneEl || !streetEl || !flatEl || !dateEl || !timeEl || !areaEl ||
@@ -440,6 +446,7 @@ if(isNaN(parseInt(areaEl.value)) || parseInt(areaEl.value) <= 0){
   order.date = dateEl.value
   order.time = timeEl.value
   order.area = parseInt(areaEl.value || 0)
+  order.comment = commentEl ? commentEl.value.trim() : ""
   if(!order.rate){
   order.rate = TARIFFS[order.type]
 }
