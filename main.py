@@ -448,9 +448,10 @@ function cleanerOrders(){
 }
 
 function renderCleanerActive(list){
-
   if(!list || list.length === 0){
     screen.innerHTML = `
+    📸 <b>Загружено ДО:</b> ${o.photos?.before?.length || 0}<br>
+    📸 <b>Загружено ПОСЛЕ:</b> ${o.photos?.after?.length || 0}<br><br>
       <h3>📦 Активные заказы</h3>
       <p>У вас нет активных заказов</p>
       <div class="btn" onclick="tap(); clientMenu()">← В меню</div>
@@ -483,7 +484,7 @@ screen.innerHTML = `
 
   <div class="btn" onclick="setStatus(${o.id}, 'on_way')">🚗 Выехал</div>
   <div class="btn" onclick="setStatus(${o.id}, 'cleaning')">🧽 Начал уборку</div>
-  <div class="btn" onclick="setStatus(${o.id}, 'done')">✅ Завершил</div>
+  <div class="btn" onclick="finishOrder(${o.id})">✅ Завершил</div>
   <hr style="margin:16px 0;opacity:.2">
 
   <div class="btn" onclick="uploadPhoto(${o.id}, 'before')">
@@ -497,6 +498,22 @@ screen.innerHTML = `
 `
 }
 
+function finishOrder(orderId){
+  fetch(API_BASE + "/cleaner/my_orders?user_id=" + user_id)
+    .then(r => r.json())
+    .then(list => {
+      const order = list.find(o => o.id === orderId)
+      if(!order) return
+
+      if(!order.photos || !order.photos.after || order.photos.after.length === 0){
+        alert("❌ Нельзя завершить заказ без фото ПОСЛЕ")
+        return
+      }
+
+      setStatus(orderId, "done")
+    })
+}
+
 function setStatus(orderId, status){
   fetch(API_BASE + "/order/status", {
     method: "POST",
@@ -505,7 +522,13 @@ function setStatus(orderId, status){
       order_id: orderId,
       status: status
     })
-  }).then(() => {
+  })
+  .then(r => r.json())
+  .then(data => {
+    if(data.error){
+      alert(data.message)
+      return
+    }
     cleanerOrders()
   })
 }
@@ -818,14 +841,37 @@ function renderOrdersList(list){
         💬 <b>Комментарий:</b><br>
         ${o.comment || "—"}<br><br>
 
+        📸 <b>Фото ДО:</b><br>
+        ${renderPhotos(o.photos?.before)}<br><br>
+
+        📸 <b>Фото ПОСЛЕ:</b><br>
+        ${renderPhotos(o.photos?.after)}<br><br>
         💰 <b>Цена:</b> ${o.price} ₽<br>
         📌 <b>Статус:</b> ${humanStatus(o.status)}
+
+        <br><br>
+
+     <div class="btn" onclick="requestPhotos(${o.id}, 'before')">
+     📸 Фото ДО уборки
+     </div>
+
+     <div class="btn" onclick="requestPhotos(${o.id}, 'after')">
+     📸 Фото ПОСЛЕ уборки
       </div>
     `
   })
 
   html += `<div class="btn" onclick="tap(); clientMenu()">Назад</div>`
   screen.innerHTML = html
+}
+
+function renderPhotos(list){
+  if(!list || list.length === 0) return "—"
+
+  return list.map(id =>
+    `<img src="https://api.telegram.org/file/bot${BOT_TOKEN}/${id}"
+     style="width:100%;border-radius:10px;margin-top:6px">`
+  ).join("")
 }
 
 /* ===== Клинер ===== */
@@ -969,6 +1015,25 @@ function uploadPhoto(orderId, kind){
     kind === "before"
       ? "📸 Отправьте фото ДО уборки в чат"
       : "📸 Отправьте фото ПОСЛЕ уборки в чат"
+  )
+}
+
+function requestPhotos(orderId, kind){
+  if(!tg){
+    alert("Откройте через Telegram")
+    return
+  }
+
+  tg.sendData(JSON.stringify({
+    action: "get_photos",
+    order_id: orderId,
+    kind: kind
+  }))
+
+  alert(
+    kind === "before"
+      ? "📸 Фото ДО уборки придут в чат"
+      : "📸 Фото ПОСЛЕ уборки придут в чат"
   )
 }
 
@@ -1187,6 +1252,13 @@ async def order_status(req: Request):
 
     for o in ORDERS:
         if o["id"] == order_id:
+
+            if status == "done" and not o["photos"]["after"]:
+                return {
+                    "error": "no_after_photos",
+                    "message": "❌ Загрузите фото ПОСЛЕ уборки"
+                }
+            
             o["status"] = status
 
             client_id = o.get("client_id")
@@ -1232,21 +1304,33 @@ async def telegram_webhook(request: Request):
     data = await request.json()
 
     message = data.get("message", {})
+    from_user = message.get("from", {})
+    user_id = from_user.get("id")
 
-    # 1. WebAppData (кнопка ДО / ПОСЛЕ)
+    # 1️⃣ Данные из Mini App (WebApp.sendData)
     web_app_data = message.get("web_app_data")
     if web_app_data:
         try:
-            payload = json.loads(web_app_data["data"])
-            if payload.get("action") == "photo":
-                PHOTO_CONTEXT[message["from"]["id"]] = {
-                    "order_id": payload["order_id"],
-                    "kind": payload["kind"]
+            payload = json.loads(web_app_data.get("data", "{}"))
+            action = payload.get("action")
+
+            if action == "photo":
+                PHOTO_CONTEXT[user_id] = {
+                    "order_id": payload.get("order_id"),
+                    "kind": payload.get("kind")  # before | after
                 }
+
+            elif action == "get_photos":
+                await send_photos_to_user(
+                    user_id,
+                    payload.get("order_id"),
+                    payload.get("kind")
+                )
+
         except Exception as e:
             print("WebAppData error:", e)
 
-    # 2. Фото
+    # 2️⃣ Фото, отправленное в чат
     if "photo" in message:
         await handle_photo(message)
 
@@ -1270,7 +1354,8 @@ async def handle_photo(message):
 
             await send_to_telegram(
                 f"📸 Фото {'ДО' if kind=='before' else 'ПОСЛЕ'}\n"
-                f"Заказ #{order_id}"
+                f"Заказ #{order_id}\n"
+                f"Клинер: {user_id}"
             )
 
             await send_message_to_user(
@@ -1279,4 +1364,32 @@ async def handle_photo(message):
                 f"{'ДО' if kind=='before' else 'ПОСЛЕ'}\n"
                 f"Заказ #{order_id}"
             )
+
+            await send_message_to_user(
+                user_id,
+                "✅ Фото сохранено.\nВы можете продолжать работу с заказом."
+            )
             break
+
+async def send_photos_to_user(user_id, order_id, kind):
+    for o in ORDERS:
+        if o["id"] == order_id:
+            photos = o["photos"].get(kind, [])
+
+            if not photos:
+                await send_message_to_user(
+                    user_id,
+                    "❌ Фото не найдены"
+                )
+                return
+
+            async with httpx.AsyncClient() as client:
+                for file_id in photos:
+                    await client.post(
+                        f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
+                        json={
+                            "chat_id": user_id,
+                            "photo": file_id
+                        }
+                    )
+            return
