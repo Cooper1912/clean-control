@@ -99,6 +99,10 @@ input,select{width:100%;padding:14px;margin-top:10px;border-radius:10px;border:1
 <script>
 const API_BASE = window.location.origin
 const tg = window.Telegram?.WebApp || null
+if (tg) {
+  tg.ready()
+  tg.expand()
+}
 
 const user = tg?.initDataUnsafe?.user || {}
 const user_id = user.id || 0
@@ -842,7 +846,7 @@ function renderOrdersList(list){
         <br><br>
 
      <div class="btn" onclick="requestPhotos(${o.id}, 'before')">
-     📸 Фото  ыДО уборки
+     📸 Фото ДО уборки
      </div>
 
      <div class="btn" onclick="requestPhotos(${o.id}, 'after')">
@@ -981,7 +985,7 @@ function cleanerAvailable(){
     })
 }
 
-ffunction uploadPhoto(orderId, kind){
+function uploadPhoto(orderId, kind){
   if(!tg){
     alert("Откройте через Telegram")
     return
