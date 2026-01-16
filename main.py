@@ -823,6 +823,7 @@ function renderOrdersList(list){
   list.forEach(o => {
     html += `
       <div style="border:1px solid #ddd;padding:14px;margin:14px 0;border-radius:12px;">
+      <div class="btn" onclick="requestPhotos(${o.id})">📸 Получить фото</div>
         <b>${o.type}</b><br><br>
 
         📍 <b>Адрес:</b> ${o.address}<br>
@@ -838,8 +839,9 @@ function renderOrdersList(list){
 
         💰 <b>Цена:</b> ${o.price} ₽<br>
         📌 <b>Статус:</b> ${humanStatus(o.status)}
-
         <br><br>
+        <br><br>
+        <div class="btn" onclick="requestPhotos(${o.id})">📸 Получить фото</div>
     `
   })
 
@@ -971,6 +973,25 @@ function cleanerAvailable(){
       `
       screen.innerHTML = html
     })
+}
+
+function requestPhotos(orderId){
+  fetch(API_BASE + "/order/photos", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      order_id: orderId,
+      user_id: user_id
+    })
+  })
+  .then(r => r.json())
+  .then(res => {
+    if(res.error){
+      alert(res.message || "Ошибка")
+    } else {
+      alert("📸 Фото отправлены в чат")
+    }
+  })
 }
 
 start()
