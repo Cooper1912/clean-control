@@ -981,22 +981,35 @@ function cleanerAvailable(){
     })
 }
 
-function uploadPhoto(orderId, kind){
+ffunction uploadPhoto(orderId, kind){
   if(!tg){
     alert("Откройте через Telegram")
     return
   }
 
-  tg.sendData(JSON.stringify({
-    action: "photo",
-    order_id: orderId,
-    kind: kind
-  }))
+  tg.MainButton.setText(
+    kind === "before"
+      ? "📸 Загрузить фото ДО"
+      : "📸 Загрузить фото ПОСЛЕ"
+  )
+
+  tg.MainButton.show()
+
+  tg.MainButton.offClick() // ← КРИТИЧЕСКИ ВАЖНО
+  tg.MainButton.onClick(() => {
+    tg.sendData(JSON.stringify({
+      action: "photo",
+      order_id: orderId,
+      kind: kind
+    }))
+
+    tg.close() // ← ОБЯЗАТЕЛЬНО
+  })
 
   alert(
     kind === "before"
-      ? "📸 Отправьте фото ДО уборки в чат"
-      : "📸 Отправьте фото ПОСЛЕ уборки в чат"
+      ? "Нажмите кнопку внизу, затем отправьте фото в чат"
+      : "Нажмите кнопку внизу, затем отправьте фото в чат"
   )
 }
 
