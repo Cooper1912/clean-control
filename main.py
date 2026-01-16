@@ -985,13 +985,10 @@ function requestPhotos(orderId){
     })
   })
   .then(r => r.json())
-  .then(res => {
-    if(res.error){
-      alert(res.message || "Ошибка")
-    } else {
-      alert("📸 Фото отправлены в чат")
-    }
+  .then(() => {
+    alert("📸 Фото отправлены в чат")
   })
+}
 }
 
 start()
@@ -1244,6 +1241,54 @@ async def order_status(req: Request):
             return {"ok": True}
 
     return {"error": "not found"}
+
+@app.post("/order/photos")
+async def order_photos(req: Request):
+    data = await req.json()
+
+    order_id = data.get("order_id")
+    user_id = data.get("user_id")
+
+    if not order_id or not user_id:
+        return {"error": "bad_request"}
+
+    # 1️⃣ ищем заказ
+    order = None
+    for o in ORDERS:
+        if o["id"] == order_id:
+            order = o
+            break
+
+    if not order:
+        return {"error": "order_not_found"}
+
+    # 2️⃣ проверяем доступ (только владелец заказа)
+    if order.get("client_id") != user_id:
+        return {"error": "no_access"}
+
+    photos_sent = 0
+
+    async with httpx.AsyncClient(timeout=5) as client:
+        for kind in ("before", "after"):
+            for file_id in order["photos"].get(kind, []):
+                await client.post(
+                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
+                    json={
+                        "chat_id": user_id,
+                        "photo": file_id,
+                        "caption": "📸 Фото ДО" if kind == "before" else "📸 Фото ПОСЛЕ"
+                    }
+                )
+                photos_sent += 1
+
+    if photos_sent == 0:
+        await send_message_to_user(
+            user_id,
+            "❌ Фото по этому заказу пока нет"
+        )
+        return {"ok": False}
+
+    return {"ok": True, "sent": photos_sent}
 
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
