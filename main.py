@@ -823,7 +823,6 @@ function renderOrdersList(list){
   list.forEach(o => {
     html += `
       <div style="border:1px solid #ddd;padding:14px;margin:14px 0;border-radius:12px;">
-      <div class="btn" onclick="requestPhotos(${o.id})">📸 Получить фото</div>
         <b>${o.type}</b><br><br>
 
         📍 <b>Адрес:</b> ${o.address}<br>
@@ -988,7 +987,6 @@ function requestPhotos(orderId){
   .then(() => {
     alert("📸 Фото отправлены в чат")
   })
-}
 }
 
 start()
