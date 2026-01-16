@@ -1301,6 +1301,9 @@ async def order_photo(req: Request):
 
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
+    
+    data = await request.json()
+    print("📥 WEBHOOK UPDATE:", data)
     data = await request.json()
 
     message = data.get("message", {})
@@ -1309,26 +1312,38 @@ async def telegram_webhook(request: Request):
 
     # 1️⃣ Данные из Mini App (WebApp.sendData)
     web_app_data = message.get("web_app_data")
+
     if web_app_data:
+        print("📦 WebAppData received:", web_app_data)
+
         try:
-            payload = json.loads(web_app_data.get("data", "{}"))
-            action = payload.get("action")
+          payload = json.loads(web_app_data.get("data", "{}"))
+          action = payload.get("action")
 
-            if action == "photo":
-                PHOTO_CONTEXT[user_id] = {
-                    "order_id": payload.get("order_id"),
-                    "kind": payload.get("kind")  # before | after
-                }
+          if action == "photo":
+            PHOTO_CONTEXT[user_id] = {
+                "order_id": payload.get("order_id"),
+                "kind": payload.get("kind")  # before | after
+            }
 
-            elif action == "get_photos":
-                await send_photos_to_user(
-                    user_id,
-                    payload.get("order_id"),
-                    payload.get("kind")
-                )
+            await send_message_to_user(
+                user_id,
+                f"📸 Контекст принят.\n"
+                f"Отправьте фото "
+                f"{'ДО' if payload.get('kind') == 'before' else 'ПОСЛЕ'} уборки в чат."
+            )
+
+            print("✅ PHOTO CONTEXT SET:", PHOTO_CONTEXT[user_id])
+
+          elif action == "get_photos":
+            await send_photos_to_user(
+                user_id,
+                payload.get("order_id"),
+                payload.get("kind")
+            )
 
         except Exception as e:
-            print("WebAppData error:", e)
+          print("❌ WebAppData parse error:", e)
 
     # 2️⃣ Фото, отправленное в чат
     if "photo" in message:
