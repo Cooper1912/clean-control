@@ -81,6 +81,38 @@ input,select{width:100%;padding:14px;margin-top:10px;border-radius:10px;border:1
   transition: opacity .15s ease;
 }
 
+.timeline {
+  border-left: 3px solid #d0d7e2;
+  padding-left: 14px;
+  margin: 10px 0 5px 6px;
+}
+
+.timeline-step {
+  position: relative;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+
+.timeline-step::before {
+  content: "";
+  position: absolute;
+  left: -11px;
+  top: 4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #cbd5e1;
+}
+
+.timeline-step.done::before {
+  background: #22c55e;
+}
+
+.timeline-step.current::before {
+  background: #facc15;
+  box-shadow: 0 0 0 4px rgba(250,204,21,.25);
+}
+
 </style>
 </head>
 <body>
@@ -231,6 +263,7 @@ function renderLastOrder(list){
       ${o.date} ${o.time}<br>
       <b>${o.price} ₽</b><br>
       <small>Статус: ${humanStatus(o.status)}</small>
+      ${renderRating(o)}
     </div>
   `
 }
@@ -243,6 +276,36 @@ function humanStatus(s){
     cleaning: "Уборка идёт",
     done: "Завершено"
   }[s] || "—"
+}
+
+function renderTimeline(status){
+  const steps = [
+  ["new", "Создан"],
+  ["taken", "Клинер назначен"],
+  ["on_way", "Клинер выехал"],
+  ["cleaning", "Уборка идёт"],
+  ["photos_ready", "Фотоотчёт готов 📸"],
+  ["done", "Завершено"]
+  ]
+
+  let reached = true
+  let html = "<div class='timeline'>"
+
+  for (let [key, label] of steps){
+    let cls = "timeline-step"
+
+    if (key === status) {
+      cls += " current"
+      reached = false
+    } else if (reached) {
+      cls += " done"
+    }
+
+    html += `<div class="${cls}">${label}</div>`
+  }
+
+  html += "</div>"
+  return html
 }
 
 
@@ -821,30 +884,72 @@ function renderOrdersList(list){
   let html = "<h3>Мои заказы</h3>"
 
   list.forEach(o => {
+
+    // есть ли вообще фото
+    const hasPhotos =
+      (o.photos?.before?.length || 0) +
+      (o.photos?.after?.length || 0) > 0
+
+    // статус для таймлайна
+    const timelineStatus =
+      hasPhotos && o.status !== "done"
+        ? "photos_ready"
+        : o.status
+
+    // кнопку фото можно нажать ТОЛЬКО после done
+    const canGetPhotos = o.status === "done"
+
     html += `
-      <div style="border:1px solid #ddd;padding:14px;margin:14px 0;border-radius:12px;">
-        <b>${o.type}</b><br><br>
+      <div style="
+        border:1px solid #ddd;
+        padding:16px;
+        margin:14px 0;
+        border-radius:14px;
+        background:#fff;
+      ">
 
-        📍 <b>Адрес:</b> ${o.address}<br>
-        📐 <b>Метраж:</b> ${o.area} м²<br>
-        📅 <b>Дата:</b> ${o.date}<br>
-        ⏰ <b>Время:</b> ${o.time}<br><br>
+        <div style="
+          display:flex;
+          justify-content:space-between;
+          align-items:center;
+        ">
+          <b>${o.type}</b>
+          <span style="
+            background:#eef3ff;
+            padding:4px 10px;
+            border-radius:10px;
+            font-size:13px;
+          ">
+            ${humanStatus(o.status)}
+          </span>
+        </div>
 
-        🧰 <b>Допы:</b><br>
-        ${renderExtrasText(o.extras)}<br><br>
+        <div style="margin-top:8px;font-size:14px;opacity:.8">
+          📍 ${o.address}<br>
+          📅 ${o.date} ${o.time}<br>
+          📐 ${o.area} м²
+        </div>
 
-        💬 <b>Комментарий:</b><br>
-        ${o.comment || "—"}<br><br>
+        <div style="margin:10px 0;font-weight:600">
+          💰 ${o.price} ₽
+        </div>
 
-        💰 <b>Цена:</b> ${o.price} ₽<br>
-        📌 <b>Статус:</b> ${humanStatus(o.status)}
-        <br><br>
-        <br><br>
-        <div class="btn" onclick="requestPhotos(${o.id})">📸 Получить фото</div>
+        ${renderTimeline(timelineStatus)}
+
+        <div class="btn"
+          style="margin-top:12px;opacity:${canGetPhotos ? 1 : 0.4}"
+          onclick="${canGetPhotos ? `requestPhotos(${o.id})` : ''}">
+          📸 Получить фото
+        </div>
+
+        ${renderRating(o)}
+
+      </div>
     `
   })
 
   html += `<div class="btn" onclick="tap(); clientMenu()">Назад</div>`
+
   screen.innerHTML = html
 }
 
@@ -989,6 +1094,44 @@ function requestPhotos(orderId){
   })
 }
 
+function renderRating(order){
+  if (order.status !== "done") return ""
+  if (order.rating) {
+    return `<div style="margin-top:10px">⭐️ Ваша оценка: ${order.rating}/5</div>`
+  }
+
+  let html = "<div style='margin-top:10px'><b>⭐️ Оцените уборку</b><br>"
+
+  for (let i = 1; i <= 5; i++) {
+    html += `<span 
+      style="font-size:26px;cursor:pointer"
+      onclick="rateOrder(${order.id}, ${i})"
+    >⭐️</span>`
+  }
+
+  html += "</div>"
+  return html
+}
+
+function rateOrder(orderId, rating){
+  fetch(API_BASE + "/order/rate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      order_id: orderId,
+      user_id: user_id,
+      rating: rating
+    })
+  })
+  .then(r => r.json())
+  .then(res => {
+    if(res.ok){
+      alert("🙏 Спасибо за оценку!")
+      myOrders()
+    }
+  })
+}
+
 start()
 </script>
 </body>
@@ -1080,12 +1223,13 @@ async def order(req: Request):
         "cleaner_id": None,
         "status": "new",
         "comment": data.get("comment", ""),
+        "rating": None,   # ⭐️ ОЦЕНКА
         "photos": {
             "before": [],
             "after": []
         },
-        **data
-    }
+         **data
+     }
 
     ORDERS.append(order_obj)
 
@@ -1251,42 +1395,54 @@ async def order_photos(req: Request):
         return {"error": "bad_request"}
 
     # 1️⃣ ищем заказ
-    order = None
-    for o in ORDERS:
-        if o["id"] == order_id:
-            order = o
-            break
-
+    order = next((o for o in ORDERS if o["id"] == order_id), None)
     if not order:
         return {"error": "order_not_found"}
 
-    # 2️⃣ проверяем доступ (только владелец заказа)
+    # 2️⃣ проверяем доступ
     if order.get("client_id") != user_id:
         return {"error": "no_access"}
 
-    photos_sent = 0
+    # 3️⃣ собираем альбом
+    media = []
 
-    async with httpx.AsyncClient(timeout=5) as client:
-        for kind in ("before", "after"):
-            for file_id in order["photos"].get(kind, []):
-                await client.post(
-                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
-                    json={
-                        "chat_id": user_id,
-                        "photo": file_id,
-                        "caption": "📸 Фото ДО" if kind == "before" else "📸 Фото ПОСЛЕ"
-                    }
-                )
-                photos_sent += 1
+    for file_id in order["photos"].get("before", []):
+        media.append({
+            "type": "photo",
+            "media": file_id
+        })
 
-    if photos_sent == 0:
+    for file_id in order["photos"].get("after", []):
+        media.append({
+            "type": "photo",
+            "media": file_id
+        })
+
+    if not media:
         await send_message_to_user(
             user_id,
             "❌ Фото по этому заказу пока нет"
         )
         return {"ok": False}
 
-    return {"ok": True, "sent": photos_sent}
+    # 4️⃣ подпись у первого фото
+    media[0]["caption"] = (
+        f"🧼 Фотоотчёт по уборке\n"
+        f"Заказ #{order_id}\n\n"
+        f"Сначала ДО → затем ПОСЛЕ"
+    )
+
+    # 5️⃣ отправляем альбом
+    async with httpx.AsyncClient(timeout=5) as client:
+        await client.post(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMediaGroup",
+            json={
+                "chat_id": user_id,
+                "media": media
+            }
+        )
+
+    return {"ok": True, "sent": len(media)}
 
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
@@ -1347,4 +1503,32 @@ async def handle_simple_photo(message):
             return
 
     await send_message_to_user(user_id, "❌ Заказ не найден")
+
+@app.post("/order/rate")
+async def rate_order(req: Request):
+    data = await req.json()
+
+    order_id = data.get("order_id")
+    user_id = data.get("user_id")
+    rating = data.get("rating")
+
+    if not order_id or not user_id or not rating:
+        return {"error": "bad_request"}
+
+    for o in ORDERS:
+        if o["id"] == order_id and o["client_id"] == user_id:
+            if o["status"] != "done":
+                return {"error": "not_done"}
+
+            o["rating"] = int(rating)
+
+            await send_to_telegram(
+                f"⭐️ Оценка заказа #{order_id}\n"
+                f"Оценка: {rating}/5\n"
+                f"Клинер: {o.get('cleaner_id')}"
+            )
+
+            return {"ok": True}
+
+    return {"error": "order_not_found"}
 
