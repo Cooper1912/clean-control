@@ -1006,8 +1006,6 @@ function uploadPhoto(orderId, kind){
       order_id: orderId,
       kind: kind
     }))
-
-    tg.close() // ← ОБЯЗАТЕЛЬНО
   })
 
   alert(
@@ -1400,6 +1398,7 @@ async def handle_photo(message):
             await send_message_to_user(
                 user_id,
                 "✅ Фото сохранено."
+                "Вы можете вернуться в Mini App и продолжить работу с заказом."
             )
             return
 
