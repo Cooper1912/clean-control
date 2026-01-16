@@ -1095,11 +1095,36 @@ async def send_message_to_user(user_id: int, text: str):
                     "text": text
                 }
             )
-            data = await resp.json()
+            data = resp.json()
             return data["result"]["message_id"]
     except Exception as e:
         print("User notify error:", e)
         return None
+    
+async def send_photos_to_user(user_id: int, order_id: int, kind: str):
+    for o in ORDERS:
+        if o["id"] == order_id:
+            photos = o["photos"].get(kind, [])
+
+            if not photos:
+                await send_message_to_user(user_id, "❌ Фото не найдены")
+                return
+            
+            if o["client_id"] != user_id:
+                await send_message_to_user(user_id, "❌ Нет доступа к заказу")
+                return
+
+            async with httpx.AsyncClient(timeout=5) as client:
+                for file_id in photos:
+                    await client.post(
+                        f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
+                        json={
+                            "chat_id": user_id,
+                            "photo": file_id
+                        }
+                    )
+            return
+    await send_message_to_user(user_id, "❌ Заказ не найден")
 
 @app.post("/order")
 async def order(req: Request):
@@ -1381,25 +1406,3 @@ async def handle_photo(message):
             PHOTO_REQUESTS.pop(user_id)
             return
 
-async def send_photos_to_user(user_id, order_id, kind):
-    for o in ORDERS:
-        if o["id"] == order_id:
-            photos = o["photos"].get(kind, [])
-
-            if not photos:
-                await send_message_to_user(
-                    user_id,
-                    "❌ Фото не найдены"
-                )
-                return
-
-            async with httpx.AsyncClient() as client:
-                for file_id in photos:
-                    await client.post(
-                        f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
-                        json={
-                            "chat_id": user_id,
-                            "photo": file_id
-                        }
-                    )
-            return
