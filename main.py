@@ -450,8 +450,6 @@ function cleanerOrders(){
 function renderCleanerActive(list){
   if(!list || list.length === 0){
     screen.innerHTML = `
-    📸 <b>Загружено ДО:</b> ${o.photos?.before?.length || 0}<br>
-    📸 <b>Загружено ПОСЛЕ:</b> ${o.photos?.after?.length || 0}<br><br>
       <h3>📦 Активные заказы</h3>
       <p>У вас нет активных заказов</p>
       <div class="btn" onclick="tap(); clientMenu()">← В меню</div>
@@ -485,15 +483,12 @@ screen.innerHTML = `
   <div class="btn" onclick="setStatus(${o.id}, 'on_way')">🚗 Выехал</div>
   <div class="btn" onclick="setStatus(${o.id}, 'cleaning')">🧽 Начал уборку</div>
   <div class="btn" onclick="finishOrder(${o.id})">✅ Завершил</div>
+
   <hr style="margin:16px 0;opacity:.2">
 
-  <div class="btn" onclick="uploadPhoto(${o.id}, 'before')">
-  📸 Фото ДО уборки
-  </div>
+  <div class="btn" onclick="uploadPhoto(${o.id}, 'before')">📸 Фото ДО уборки</div>
+  <div class="btn" onclick="uploadPhoto(${o.id}, 'after')">📸 Фото ПОСЛЕ уборки</div>
 
-  <div class="btn" onclick="uploadPhoto(${o.id}, 'after')">
-  📸 Фото ПОСЛЕ уборки
-  </div>
   <div class="btn" onclick="tap(); clientMenu()">← В меню</div>
 `
 }
@@ -841,18 +836,13 @@ function renderOrdersList(list){
         💬 <b>Комментарий:</b><br>
         ${o.comment || "—"}<br><br>
 
-        📸 <b>Фото ДО:</b><br>
-        ${renderPhotos(o.photos?.before)}<br><br>
-
-        📸 <b>Фото ПОСЛЕ:</b><br>
-        ${renderPhotos(o.photos?.after)}<br><br>
         💰 <b>Цена:</b> ${o.price} ₽<br>
         📌 <b>Статус:</b> ${humanStatus(o.status)}
 
         <br><br>
 
      <div class="btn" onclick="requestPhotos(${o.id}, 'before')">
-     📸 Фото ДО уборки
+     📸 Фото  ыДО уборки
      </div>
 
      <div class="btn" onclick="requestPhotos(${o.id}, 'after')">
@@ -865,14 +855,6 @@ function renderOrdersList(list){
   screen.innerHTML = html
 }
 
-function renderPhotos(list){
-  if(!list || list.length === 0) return "—"
-
-  return list.map(id =>
-    `<img src="https://api.telegram.org/file/bot${BOT_TOKEN}/${id}"
-     style="width:100%;border-radius:10px;margin-top:6px">`
-  ).join("")
-}
 
 /* ===== Клинер ===== */
 
@@ -1324,7 +1306,8 @@ async def telegram_webhook(request: Request):
             if action == "photo":
                 PHOTO_CONTEXT[user_id] = {
                     "order_id": payload.get("order_id"),
-                    "kind": payload.get("kind")
+                    "kind": payload.get("kind"),
+                    "ts": asyncio.get_event_loop().time()
                 }
 
                 await send_message_to_user(
@@ -1356,7 +1339,55 @@ async def handle_photo(message):
     user_id = message["from"]["id"]
 
     if user_id not in PHOTO_CONTEXT:
+        await send_message_to_user(
+            user_id,
+            "❌ Фото не привязано к заказу.\n"
+            "Сначала нажмите кнопку 📸 Фото ДО/ПОСЛЕ в Mini App."
+        )
+        print("⚠️ PHOTO WITHOUT CONTEXT:", user_id)
         return
+
+    ctx = PHOTO_CONTEXT.get(user_id)
+
+    # ⏱ Проверка устаревшего контекста (5 минут)
+    if asyncio.get_event_loop().time() - ctx.get("ts", 0) > 300:
+        PHOTO_CONTEXT.pop(user_id, None)
+        await send_message_to_user(
+            user_id,
+            "⏱ Контекст фото устарел.\n"
+            "Пожалуйста, нажмите кнопку загрузки фото ещё раз."
+        )
+        return
+
+    # Контекст валиден — забираем
+    ctx = PHOTO_CONTEXT.pop(user_id)
+    order_id = ctx["order_id"]
+    kind = ctx["kind"]
+
+    file_id = message["photo"][-1]["file_id"]
+
+    for o in ORDERS:
+        if o["id"] == order_id:
+            o["photos"][kind].append(file_id)
+
+            await send_to_telegram(
+                f"📸 Фото {'ДО' if kind=='before' else 'ПОСЛЕ'}\n"
+                f"Заказ #{order_id}\n"
+                f"Клинер: {user_id}"
+            )
+
+            await send_message_to_user(
+                o["client_id"],
+                f"📸 Клинер загрузил фото "
+                f"{'ДО' if kind=='before' else 'ПОСЛЕ'}\n"
+                f"Заказ #{order_id}"
+            )
+
+            await send_message_to_user(
+                user_id,
+                "✅ Фото сохранено.\nВы можете продолжать работу с заказом."
+            )
+            break
 
     ctx = PHOTO_CONTEXT.pop(user_id)
     order_id = ctx["order_id"]
