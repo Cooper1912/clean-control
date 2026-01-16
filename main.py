@@ -991,7 +991,6 @@ function uploadPhoto(orderId, kind){
     return
   }
 
-  // 1. Кнопка установки контекста
   tg.MainButton.setText(
     kind === "before"
       ? "📸 Подтвердить фото ДО"
@@ -1008,16 +1007,15 @@ function uploadPhoto(orderId, kind){
       kind: kind
     }))
 
-    // 2. После отправки контекста — кнопка перехода в чат
     tg.MainButton.setText("➡️ Перейти в чат")
     tg.MainButton.offClick()
 
     tg.MainButton.onClick(() => {
-      tg.openTelegramLink("https://t.me/" + tg.initDataUnsafe.user.username)
+      tg.close()   // ✅ ВОТ КЛЮЧЕВАЯ СТРОКА
     })
   })
 
-  alert("Нажмите кнопку внизу, затем перейдите в чат и отправьте фото 📸")
+  alert("Нажмите кнопку внизу, затем отправьте фото в чате 📸")
 }
 
 function requestPhotos(orderId, kind){
