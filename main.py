@@ -1301,51 +1301,52 @@ async def order_photo(req: Request):
 
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
-    
+
+    # 1️⃣ ЧИТАЕМ JSON ОДИН РАЗ
     data = await request.json()
     print("📥 WEBHOOK UPDATE:", data)
-    data = await request.json()
 
+    # 2️⃣ ДОСТАЁМ MESSAGE
     message = data.get("message", {})
     from_user = message.get("from", {})
     user_id = from_user.get("id")
 
-    # 1️⃣ Данные из Mini App (WebApp.sendData)
+    # 3️⃣ WEB APP DATA
     web_app_data = message.get("web_app_data")
 
     if web_app_data:
         print("📦 WebAppData received:", web_app_data)
 
         try:
-          payload = json.loads(web_app_data.get("data", "{}"))
-          action = payload.get("action")
+            payload = json.loads(web_app_data.get("data", "{}"))
+            action = payload.get("action")
 
-          if action == "photo":
-            PHOTO_CONTEXT[user_id] = {
-                "order_id": payload.get("order_id"),
-                "kind": payload.get("kind")  # before | after
-            }
+            if action == "photo":
+                PHOTO_CONTEXT[user_id] = {
+                    "order_id": payload.get("order_id"),
+                    "kind": payload.get("kind")
+                }
 
-            await send_message_to_user(
-                user_id,
-                f"📸 Контекст принят.\n"
-                f"Отправьте фото "
-                f"{'ДО' if payload.get('kind') == 'before' else 'ПОСЛЕ'} уборки в чат."
-            )
+                await send_message_to_user(
+                    user_id,
+                    f"📸 Контекст принят.\n"
+                    f"Отправьте фото "
+                    f"{'ДО' if payload.get('kind') == 'before' else 'ПОСЛЕ'} уборки."
+                )
 
-            print("✅ PHOTO CONTEXT SET:", PHOTO_CONTEXT[user_id])
+                print("✅ PHOTO CONTEXT SET:", PHOTO_CONTEXT[user_id])
 
-          elif action == "get_photos":
-            await send_photos_to_user(
-                user_id,
-                payload.get("order_id"),
-                payload.get("kind")
-            )
+            elif action == "get_photos":
+                await send_photos_to_user(
+                    user_id,
+                    payload.get("order_id"),
+                    payload.get("kind")
+                )
 
         except Exception as e:
-          print("❌ WebAppData parse error:", e)
+            print("❌ WebAppData error:", e)
 
-    # 2️⃣ Фото, отправленное в чат
+    # 4️⃣ ЕСЛИ ЭТО ФОТО
     if "photo" in message:
         await handle_photo(message)
 
