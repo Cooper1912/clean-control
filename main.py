@@ -1347,20 +1347,17 @@ async def handle_photo(message):
         print("⚠️ PHOTO WITHOUT CONTEXT:", user_id)
         return
 
-    ctx = PHOTO_CONTEXT.get(user_id)
+    ctx = PHOTO_CONTEXT.pop(user_id)
 
     # ⏱ Проверка устаревшего контекста (5 минут)
     if asyncio.get_event_loop().time() - ctx.get("ts", 0) > 300:
-        PHOTO_CONTEXT.pop(user_id, None)
         await send_message_to_user(
             user_id,
             "⏱ Контекст фото устарел.\n"
-            "Пожалуйста, нажмите кнопку загрузки фото ещё раз."
+            "Нажмите кнопку загрузки фото ещё раз."
         )
         return
 
-    # Контекст валиден — забираем
-    ctx = PHOTO_CONTEXT.pop(user_id)
     order_id = ctx["order_id"]
     kind = ctx["kind"]
 
@@ -1385,38 +1382,9 @@ async def handle_photo(message):
 
             await send_message_to_user(
                 user_id,
-                "✅ Фото сохранено.\nВы можете продолжать работу с заказом."
+                "✅ Фото сохранено."
             )
-            break
-
-    ctx = PHOTO_CONTEXT.pop(user_id)
-    order_id = ctx["order_id"]
-    kind = ctx["kind"]
-
-    file_id = message["photo"][-1]["file_id"]
-
-    for o in ORDERS:
-        if o["id"] == order_id:
-            o["photos"][kind].append(file_id)
-
-            await send_to_telegram(
-                f"📸 Фото {'ДО' if kind=='before' else 'ПОСЛЕ'}\n"
-                f"Заказ #{order_id}\n"
-                f"Клинер: {user_id}"
-            )
-
-            await send_message_to_user(
-                o["client_id"],
-                f"📸 Клинер загрузил фото "
-                f"{'ДО' if kind=='before' else 'ПОСЛЕ'}\n"
-                f"Заказ #{order_id}"
-            )
-
-            await send_message_to_user(
-                user_id,
-                "✅ Фото сохранено.\nВы можете продолжать работу с заказом."
-            )
-            break
+            return
 
 async def send_photos_to_user(user_id, order_id, kind):
     for o in ORDERS:
