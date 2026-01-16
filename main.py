@@ -11,9 +11,9 @@ ADMIN_ID = int(os.getenv("ADMIN_ID"))
 
 APPROVED_CLEANERS = set()
 CLEANER_REQUESTS = {}
+PHOTO_REQUESTS = {}
 
 ORDERS = []
-PHOTO_CONTEXT = {}
 
 
 app = FastAPI()
@@ -490,8 +490,8 @@ screen.innerHTML = `
 
   <hr style="margin:16px 0;opacity:.2">
 
-  <div class="btn" onclick="uploadPhoto(${o.id}, 'before')">📸 Фото ДО уборки</div>
-  <div class="btn" onclick="uploadPhoto(${o.id}, 'after')">📸 Фото ПОСЛЕ уборки</div>
+  <div class="btn" onclick="requestPhoto(${o.id}, 'before')">📸 Запросить фото ДО</div>
+  <div class="btn" onclick="requestPhoto(${o.id}, 'after')">📸 Запросить фото ПОСЛЕ</div>
 
   <div class="btn" onclick="tap(); clientMenu()">← В меню</div>
 `
@@ -511,6 +511,25 @@ function finishOrder(orderId){
 
       setStatus(orderId, "done")
     })
+}
+
+function requestPhoto(orderId, kind){
+  if(!tg){
+    alert("Откройте через Telegram")
+    return
+  }
+
+  tg.sendData(JSON.stringify({
+    action: "request_photo",
+    order_id: orderId,
+    kind: kind
+  }))
+
+  alert(
+    kind === "before"
+      ? "📸 Запрос фото ДО отправлен в чат"
+      : "📸 Запрос фото ПОСЛЕ отправлен в чат"
+  )
 }
 
 function setStatus(orderId, status){
@@ -985,39 +1004,6 @@ function cleanerAvailable(){
     })
 }
 
-function uploadPhoto(orderId, kind){
-  if(!tg){
-    alert("Откройте через Telegram")
-    return
-  }
-
-  tg.MainButton.setText(
-    kind === "before"
-      ? "📸 Подтвердить фото ДО"
-      : "📸 Подтвердить фото ПОСЛЕ"
-  )
-
-  tg.MainButton.show()
-  tg.MainButton.offClick()
-
-  tg.MainButton.onClick(() => {
-    tg.sendData(JSON.stringify({
-      action: "photo",
-      order_id: orderId,
-      kind: kind
-    }))
-
-    tg.MainButton.setText("➡️ Перейти в чат")
-    tg.MainButton.offClick()
-
-    tg.MainButton.onClick(() => {
-      tg.close()   // ✅ ВОТ КЛЮЧЕВАЯ СТРОКА
-    })
-  })
-
-  alert("Нажмите кнопку внизу, затем отправьте фото в чате 📸")
-}
-
 function requestPhotos(orderId, kind){
   if(!tg){
     alert("Откройте через Telegram")
@@ -1102,15 +1088,18 @@ async def send_to_telegram(text: str):
 async def send_message_to_user(user_id: int, text: str):
     try:
         async with httpx.AsyncClient(timeout=5) as client:
-            await client.post(
+            resp = await client.post(
                 f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-                    json={
-                        "chat_id": user_id,
-                        "text": text
-                    }
+                json={
+                    "chat_id": user_id,
+                    "text": text
+                }
             )
+            data = await resp.json()
+            return data["result"]["message_id"]
     except Exception as e:
         print("User notify error:", e)
+        return None
 
 @app.post("/order")
 async def order(req: Request):
@@ -1284,21 +1273,6 @@ async def order_status(req: Request):
 
     return {"error": "not found"}
 
-@app.post("/order/photo")
-async def order_photo(req: Request):
-    data = await req.json()
-
-    order_id = data["order_id"]
-    photo_type = data["type"]  # before | after
-    file_id = data["file_id"]
-
-    for o in ORDERS:
-        if o["id"] == order_id:
-            o["photos"][photo_type].append(file_id)
-            return {"ok": True}
-
-    return {"error": "order not found"}
-
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
 
@@ -1321,21 +1295,25 @@ async def telegram_webhook(request: Request):
             payload = json.loads(web_app_data.get("data", "{}"))
             action = payload.get("action")
 
-            if action == "photo":
-                PHOTO_CONTEXT[user_id] = {
-                    "order_id": payload.get("order_id"),
-                    "kind": payload.get("kind"),
-                    "ts": asyncio.get_event_loop().time()
-                }
+            if action == "request_photo":
+                order_id = payload.get("order_id")
+                kind = payload.get("kind")
 
-                await send_message_to_user(
+                msg = await send_message_to_user(
                     user_id,
-                    f"📸 Контекст принят.\n"
+                    f"📸 Заказ #{order_id}\n"
                     f"Отправьте фото "
-                    f"{'ДО' if payload.get('kind') == 'before' else 'ПОСЛЕ'} уборки."
+                    f"{'ДО' if kind=='before' else 'ПОСЛЕ'} уборки\n\n"
+                    f"⚠️ ВАЖНО: отправьте фото В ОТВЕТ на это сообщение"
                 )
 
-                print("✅ PHOTO CONTEXT SET:", PHOTO_CONTEXT[user_id])
+                PHOTO_REQUESTS[user_id] = {
+                    "order_id": order_id,
+                    "kind": kind,
+                    "message_id": msg
+                }
+
+                print("✅ PHOTO REQUEST SET:", PHOTO_REQUESTS[user_id])
 
             elif action == "get_photos":
                 await send_photos_to_user(
@@ -1348,7 +1326,7 @@ async def telegram_webhook(request: Request):
             print("❌ WebAppData error:", e)
 
     # 4️⃣ ЕСЛИ ЭТО ФОТО
-    if "photo" in message:
+    if message.get("photo") or message.get("document"):
         await handle_photo(message)
 
     return {"ok": True}
@@ -1356,53 +1334,51 @@ async def telegram_webhook(request: Request):
 async def handle_photo(message):
     user_id = message["from"]["id"]
 
-    if user_id not in PHOTO_CONTEXT:
+    req = PHOTO_REQUESTS.get(user_id)
+    if not req:
         await send_message_to_user(
             user_id,
-            "❌ Фото не привязано к заказу.\n"
-            "Сначала нажмите кнопку 📸 Фото ДО/ПОСЛЕ в Mini App."
-        )
-        print("⚠️ PHOTO WITHOUT CONTEXT:", user_id)
-        return
-
-    ctx = PHOTO_CONTEXT.pop(user_id)
-
-    # ⏱ Проверка устаревшего контекста (5 минут)
-    if asyncio.get_event_loop().time() - ctx.get("ts", 0) > 300:
-        await send_message_to_user(
-            user_id,
-            "⏱ Контекст фото устарел.\n"
-            "Нажмите кнопку загрузки фото ещё раз."
+            "❌ Фото не ожидается.\n"
+            "Используйте кнопку 📸 в Mini App."
         )
         return
 
-    order_id = ctx["order_id"]
-    kind = ctx["kind"]
+    reply = message.get("reply_to_message")
+    if not reply or reply["message_id"] != req["message_id"]:
+        await send_message_to_user(
+            user_id,
+            "❌ Отправьте фото В ОТВЕТ на сообщение с запросом."
+        )
+        return
 
-    file_id = message["photo"][-1]["file_id"]
+    # file_id
+    if "photo" in message:
+        file_id = message["photo"][-1]["file_id"]
+    elif "document" in message:
+        file_id = message["document"]["file_id"]
+    else:
+        return
+
+    order_id = req["order_id"]
+    kind = req["kind"]
 
     for o in ORDERS:
         if o["id"] == order_id:
             o["photos"][kind].append(file_id)
 
-            await send_to_telegram(
-                f"📸 Фото {'ДО' if kind=='before' else 'ПОСЛЕ'}\n"
-                f"Заказ #{order_id}\n"
-                f"Клинер: {user_id}"
+            await send_message_to_user(
+                user_id,
+                "✅ Фото сохранено"
             )
 
             await send_message_to_user(
                 o["client_id"],
-                f"📸 Клинер загрузил фото "
+                f"📸 Получено фото "
                 f"{'ДО' if kind=='before' else 'ПОСЛЕ'}\n"
                 f"Заказ #{order_id}"
             )
 
-            await send_message_to_user(
-                user_id,
-                "✅ Фото сохранено."
-                "Вы можете вернуться в Mini App и продолжить работу с заказом."
-            )
+            PHOTO_REQUESTS.pop(user_id)
             return
 
 async def send_photos_to_user(user_id, order_id, kind):
