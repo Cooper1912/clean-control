@@ -3,8 +3,12 @@ import asyncio
 import os
 import json
 import re
+import uuid
+from yookassa import Configuration, Payment
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
+
+
 
 
 BOT_TOKEN = os.getenv("CLIENT_BOT_TOKEN")
@@ -34,6 +38,9 @@ EXTRAS_PRICES = {
 
 
 app = FastAPI()
+
+Configuration.account_id = os.getenv("YOO_KASSA_SHOP_ID")
+Configuration.secret_key = os.getenv("YOO_KASSA_SECRET")
 
 @app.get("/", response_class=HTMLResponse)
 async def webapp():
@@ -1192,8 +1199,8 @@ function requestPhotos(orderId){
 
 function payOrder(orderId){
   screen.innerHTML = `
-    <h3>Проводим оплату…</h3>
-    <p style="opacity:.6">Пожалуйста, подождите</p>
+    <h3>Переходим к оплате…</h3>
+    <p style="opacity:.6">Вы будете перенаправлены</p>
   `
 
   fetch(API_BASE + "/order/pay", {
@@ -1206,11 +1213,10 @@ function payOrder(orderId){
   })
   .then(r => r.json())
   .then(res => {
-    if(res.ok){
-      alert("✅ Оплата прошла успешно")
-      myOrders()
+    if(res.confirmation_url){
+      window.location.href = res.confirmation_url
     } else {
-      alert("❌ Ошибка оплаты")
+      alert("❌ Не удалось создать платёж")
       myOrders()
     }
   })
@@ -1623,30 +1629,78 @@ async def order_status(req: Request):
 @app.post("/order/pay")
 async def order_pay(req: Request):
     data = await req.json()
-
     order_id = data.get("order_id")
     user_id = data.get("user_id")
 
-    for o in ORDERS:
-        if o["id"] == order_id and o["client_id"] == user_id:
-            
-            if o["status"] != "done":
-                return {"error": "not_done"}
+    order = next(
+        (o for o in ORDERS if o["id"] == order_id and o["client_id"] == user_id),
+        None
+    )
 
-            if o["payment_status"] == "paid":
-                return {"error": "already_paid"}
-            o["payment_status"] = "paid"
-            o["payout_status"] = "available"
+    if not order:
+        return {"error": "order_not_found"}
 
-            await send_to_telegram(
-                f"💳 Заказ #{order_id} ОПЛАЧЕН\n"
-                f"Сумма: {o['price']} ₽\n"
-                f"Клинер: {o.get('cleaner_id')}"
-            )
+    if order["status"] != "done":
+        return {"error": "order_not_done"}
 
-            return {"ok": True}
+    if order["payment_status"] == "paid":
+        return {"error": "already_paid"}
+    
+    if order["payment_status"] == "waiting":
+        return {"error": "payment_already_created"}
 
-    return {"error": "order_not_found"}
+    payment = Payment.create({
+        "amount": {
+            "value": f"{order['price']}.00",
+            "currency": "RUB"
+        },
+        "confirmation": {
+            "type": "redirect",
+            "return_url": "https://t.me/clean_control_bot?start=paid"
+        },
+        "capture": True,
+        "description": f"Уборка, заказ #{order_id}",
+        "metadata": {
+            "order_id": order_id
+        }
+    }, uuid.uuid4())
+
+    order["payment_status"] = "waiting"
+    order["payment_id"] = payment.id
+
+    return {
+        "confirmation_url": payment.confirmation.confirmation_url
+    }
+
+@app.post("/yookassa/webhook")
+async def yookassa_webhook(req: Request):
+    event = await req.json()
+
+    # нас интересует ТОЛЬКО успешная оплата
+    if event.get("event") != "payment.succeeded":
+        return {"ok": True}
+
+    payment = event["object"]
+    order_id = int(payment["metadata"]["order_id"])
+
+    order = next((o for o in ORDERS if o["id"] == order_id), None)
+    if not order:
+        return {"ok": True}
+    
+# если уже обработан — ничего не делаем
+    if order.get("payment_status") == "paid":
+        return {"ok": True}
+
+    order["payment_status"] = "paid"
+    order["payout_status"] = "available"
+
+    await send_to_telegram(
+        f"💰 Оплата получена\n"
+        f"Заказ #{order_id}\n"
+        f"Сумма: {order['price']} ₽"
+    )
+
+    return {"ok": True}
 
 @app.post("/order/photos")
 async def order_photos(req: Request):
