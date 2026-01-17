@@ -960,19 +960,16 @@ function renderOrdersList(list){
 
   list.forEach(o => {
 
-    // есть ли вообще фото
     const hasPhotos =
       (o.photos?.before?.length || 0) +
       (o.photos?.after?.length || 0) > 0
 
-    // статус для таймлайна
     const timelineStatus =
       hasPhotos && o.status !== "done"
         ? "photos_ready"
         : o.status
 
-    // кнопку фото можно нажать ТОЛЬКО после done
-    const canGetPhotos = o.status === "done"
+    const canGetPhotos = o.status === "done" && !o.photos_sent
 
     html += `
       <div style="
@@ -1011,20 +1008,33 @@ function renderOrdersList(list){
 
         ${renderTimeline(timelineStatus)}
 
-        ${o.status === "done" && o.payment_status !== "paid"
-          ? `
-            <div class="btn" onclick="payOrder(${o.id})">
-              💳 Оплатить уборку ${o.price} ₽
-            </div>
-          `
-          : ""
+        ${
+          o.payment_status === "paid"
+            ? `<div style="margin-top:10px;color:green;font-weight:600">
+                 ✅ Оплачено
+               </div>`
+            : o.status === "done"
+              ? `
+                <div class="btn" onclick="payOrder(${o.id})">
+                  💳 Оплатить уборку ${o.price} ₽
+                </div>
+              `
+              : ""
         }
 
-        <div class="btn"
-          style="margin-top:12px;opacity:${canGetPhotos ? 1 : 0.4}"
-          onclick="${canGetPhotos ? `requestPhotos(${o.id})` : ''}">
-          📸 Получить фото
-        </div>
+        ${
+          canGetPhotos
+            ? `
+              <div class="btn" onclick="requestPhotos(${o.id})">
+                📸 Получить фото
+              </div>
+            `
+            : `
+              <div style="margin-top:12px;opacity:.6">
+                📸 Фото уже получены
+              </div>
+            `
+        }
 
         ${renderRating(o)}
 
