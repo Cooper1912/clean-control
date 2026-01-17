@@ -36,8 +36,9 @@ async def approve_cleaner(message: Message):
         return
 
     async with httpx.AsyncClient() as client:
-        await client.get(
-            f"{API_BASE}/cleaner/approve?user_id={uid}"
+        await client.post(
+            f"{API_BASE}/admin/approve_cleaner",
+            json={"user_id": int(uid)}
         )
 
     await message.answer(f"✅ Клинер {uid} одобрен")
@@ -51,6 +52,12 @@ async def reject_cleaner(message: Message):
     if not uid.isdigit():
         await message.answer("Использование: /reject <user_id>")
         return
+
+    async with httpx.AsyncClient() as client:
+        await client.post(
+            f"{API_BASE}/admin/reject_cleaner",
+            json={"user_id": int(uid)}
+        )
 
     await message.answer(f"❌ Клинер {uid} отклонён")
 

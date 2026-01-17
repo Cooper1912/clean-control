@@ -971,16 +971,28 @@ function renderOrdersList(list){
 
   list.forEach(o => {
 
-    const hasPhotos =
-      (o.photos?.before?.length || 0) +
-      (o.photos?.after?.length || 0) > 0
+    const hasAfterPhotos =
+      Array.isArray(o.photos?.after) && o.photos.after.length > 0
 
-    const timelineStatus =
-      hasPhotos && o.status !== "done"
-        ? "photos_ready"
-        : o.status
+    let timelineStatus = o.status
 
-    const canGetPhotos = o.status === "done" && !o.photos_sent
+    if (
+      o.status === "cleaning" &&
+      Array.isArray(o.photos?.after) &&
+      o.photos.after.length > 0
+    ) {
+      timelineStatus = "photos_ready"
+    }
+
+    if (o.status === "done") {
+      timelineStatus = "done"
+    }
+
+    const canGetPhotos =
+      o.status === "done" &&
+      Array.isArray(o.photos?.after) &&
+      o.photos.after.length > 0 &&
+     !o.photos_sent
 
     html += `
       <div style="
@@ -1037,15 +1049,19 @@ function renderOrdersList(list){
           canGetPhotos
             ? `
               <div class="btn" onclick="requestPhotos(${o.id})">
-                📸 Получить фото
+              📸 Получить фото
               </div>
             `
-            : `
-              <div style="margin-top:12px;opacity:.6">
-                📸 Фото уже получены
-              </div>
-            `
-        }
+            : (
+                o.photos_sent
+                  ? `
+                    <div style="margin-top:12px;opacity:.6">
+                     📸 Фото уже получены
+                    </div>
+                  `
+                  : ""
+              )
+        }.     
 
         ${renderRating(o)}
 
@@ -1355,17 +1371,17 @@ async def cleaner_state(user_id: int):
 
     return {"state": "new"}
 
-@app.get("/cleaner/approve")
-async def approve_cleaner(user_id: int):
-    APPROVED_CLEANERS.add(int(user_id))
+@app.post("/admin/approve_cleaner")
+async def admin_approve_cleaner(req: Request):
+    data = await req.json()
+    user_id = int(data.get("user_id"))
+
+    APPROVED_CLEANERS.add(user_id)
     CLEANER_REQUESTS.pop(str(user_id), None)
 
-    await send_to_admin(f"✅ Клинер {user_id} одобрен")
+    await send_to_admin(f"✅ Клинер {user_id} одобрен администратором")
 
-    return {
-        "ok": True,
-        "message": "Клинер одобрен. Можно закрыть страницу."
-    }
+    return {"ok": True}
 
 @app.post("/cleaner/apply")
 async def cleaner_apply(req: Request):
@@ -1862,6 +1878,9 @@ async def order_photos(req: Request):
     
     if order.get("photos_sent"):
         return {"error": "already_sent"}
+    
+    if order["status"] != "done":
+        return {"error": "order_not_done"}
 
     # 3️⃣ собираем альбом
     media = []
@@ -1908,12 +1927,38 @@ async def order_photos(req: Request):
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
     data = await request.json()
-    print("📥 WEBHOOK UPDATE:", data)
 
     message = data.get("message")
     if not message:
         return {"ok": True}
 
+    sender_id = message["from"]["id"]
+    text = message.get("text", "")
+
+    # ====== АДМИН-КОМАНДЫ ======
+    if sender_id == ADMIN_ID and text:
+
+        if text.startswith("/approve_"):
+            cid = text.replace("/approve_", "").strip()
+            APPROVED_CLEANERS.add(int(cid))
+            CLEANER_REQUESTS.pop(cid, None)
+
+            await send_to_admin(f"✅ Клинер {cid} одобрен")
+            return {"ok": True}
+
+        if text.startswith("/reject_"):
+            cid = text.replace("/reject_", "").strip()
+            CLEANER_REQUESTS.pop(cid, None)
+
+            await send_to_admin(f"❌ Клинер {cid} отклонён")
+            return {"ok": True}
+
+        if text.startswith("/ask_"):
+            cid = text.replace("/ask_", "").strip()
+            await send_to_admin(f"💬 Вопрос клинеру {cid}")
+            return {"ok": True}
+
+    # ====== ФОТО ОТ КЛИНЕРА ======
     if message.get("photo") or message.get("document"):
         await handle_simple_photo(message)
 
@@ -1922,6 +1967,8 @@ async def telegram_webhook(request: Request):
 async def handle_simple_photo(message):
     user_id = message["from"]["id"]
     caption = (message.get("caption") or "").lower()
+
+    # ================== 1. ИЩЕМ НОМЕР ЗАКАЗА ==================
 
     match = re.search(r"\b(\d+)\b", caption)
     if not match:
@@ -1932,6 +1979,8 @@ async def handle_simple_photo(message):
         return
 
     order_id = int(match.group(1))
+
+    # ================== 2. ОПРЕДЕЛЯЕМ ТИП ФОТО ==================
 
     if "до" in caption:
         kind = "before"
@@ -1944,6 +1993,8 @@ async def handle_simple_photo(message):
         )
         return
 
+    # ================== 3. ПОЛУЧАЕМ FILE_ID ==================
+
     if message.get("photo"):
         file_id = message["photo"][-1]["file_id"]
     elif message.get("document"):
@@ -1951,17 +2002,62 @@ async def handle_simple_photo(message):
     else:
         return
 
-    for o in ORDERS:
-        if o["id"] == order_id:
-            o["photos"][kind].append(file_id)
+    # ================== 4. ИЩЕМ ЗАКАЗ ==================
 
-            await send_message_to_user(
-                user_id,
-                f"✅ Фото {'ДО' if kind=='before' else 'ПОСЛЕ'} сохранено\nЗаказ #{order_id}"
-            )
-            return
+    order = next((o for o in ORDERS if o["id"] == order_id), None)
+    if not order:
+        await send_message_to_user(user_id, "❌ Заказ не найден")
+        return
 
-    await send_message_to_user(user_id, "❌ Заказ не найден")
+    # ================== 5. ПРОВЕРКА: ЭТО КЛИНЕР ЭТОГО ЗАКАЗА ==================
+
+    if order.get("cleaner_id") != user_id:
+        await send_message_to_user(
+            user_id,
+            "❌ Вы не назначены клинером этого заказа"
+        )
+        return
+
+    # ================== 6. ПРОВЕРКА СТАТУСОВ ==================
+
+    if kind == "before" and order["status"] not in ("taken", "on_way", "cleaning"):
+        await send_message_to_user(
+            user_id,
+            "❌ Фото ДО можно загружать только после назначения заказа"
+        )
+        return
+
+    if kind == "after" and order["status"] not in ("cleaning", "done"):
+        await send_message_to_user(
+            user_id,
+            "❌ Фото ПОСЛЕ можно загружать только во время или после уборки"
+        )
+        return
+
+    # ================== 7. ЛИМИТ ФОТО (10) ==================
+
+    MAX_PHOTOS = 10
+
+    current_photos = order["photos"].get(kind, [])
+
+    if len(current_photos) >= MAX_PHOTOS:
+        await send_message_to_user(
+            user_id,
+            f"❌ Можно загрузить не более {MAX_PHOTOS} фото "
+            f"{'ДО' if kind=='before' else 'ПОСЛЕ'}"
+        )
+        return
+
+    # ================== 8. СОХРАНЯЕМ ФОТО ==================
+
+    order["photos"][kind].append(file_id)
+
+    await send_message_to_user(
+        user_id,
+        f"✅ Фото {'ДО' if kind=='before' else 'ПОСЛЕ'} сохранено\n"
+        f"Заказ #{order_id}\n"
+        f"Фото: {len(order['photos'][kind])}/{MAX_PHOTOS}"
+    )
 
 @app.post("/order/rate")
 async def rate_order(req: Request):
