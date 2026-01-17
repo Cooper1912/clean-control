@@ -12,7 +12,7 @@ from fastapi.responses import HTMLResponse
 
 
 BOT_TOKEN = os.getenv("CLIENT_BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID", 0))
+ADMIN_ID = int(os.getenv("ADMIN_ID") or 8176375746)
 
 APPROVED_CLEANERS = set()
 CLEANER_REQUESTS = {}
@@ -232,6 +232,10 @@ function start(){
 
 function clientMenu(){
 
+  if (window.location.search.includes("paid")) {
+  myOrders()
+   }
+
   screen.innerHTML = `
     <h3>${user.first_name || "Здравствуйте"} 👋</h3>
 
@@ -319,7 +323,7 @@ function humanStatus(s){
     taken: "Клинер назначен",
     on_way: "Клинер выехал",
     cleaning: "Уборка идёт",
-    done: "Завершено"
+    done: "Завершено",
     cancelled: "❌ Отменён",
   }[s] || "—"
 }
@@ -1860,7 +1864,7 @@ async def order_photos(req: Request):
                 "media": media
             }
         )
-        order["photos_sent"]
+        order["photos_sent"] = True
 
     return {"ok": True, "sent": len(media)}
 
