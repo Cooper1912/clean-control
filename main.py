@@ -1360,10 +1360,7 @@ async def cleaner_apply(req: Request):
     )
 
     async with httpx.AsyncClient() as client:
-        await client.post(
-            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-            json={"chat_id": ADMIN_ID, "text": text}
-        )
+        await send_to_admin(text)
 
     return {"ok": True}
 
@@ -1430,15 +1427,15 @@ async def order(req: Request):
     phone = re.sub(r"\D", "", str(data.get("phone", "")))
     if len(phone) < 10:
         return {"error": "invalid_phone"}
-    
-    if not email or "@" not in email:
-        return {"error": "invalid_email"}
 
     # strings
     name = clean_str(data.get("name"), 50)
     address = clean_str(data.get("address"), 150)
     comment = clean_str(data.get("comment"), 300)
     email = clean_str(data.get("email"), 100)
+
+    if not email or "@" not in email:
+        return {"error": "invalid_email"}
 
     if not name or not address:
         return {"error": "missing_fields"}
