@@ -13,6 +13,7 @@ from fastapi.responses import HTMLResponse
 
 BOT_TOKEN = os.getenv("CLIENT_BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID") or 8176375746)
+ADMIN_BOT_TOKEN = os.getenv("ADMIN_BOT_TOKEN")
 
 APPROVED_CLEANERS = set()
 CLEANER_REQUESTS = {}
@@ -1409,9 +1410,7 @@ async def cleaner_apply(req: Request):
         f"/reject_{uid} — ❌ Отказать\n"
         f"/ask_{uid} — 💬 Задать вопрос"
     )
-
-    async with httpx.AsyncClient() as client:
-        async with httpx.AsyncClient(timeout=5) as client:
+    async with httpx.AsyncClient(timeout=5) as client:
             await client.post(
                 f"https://api.telegram.org/bot{ADMIN_BOT_TOKEN}/sendMessage",
                 json={
@@ -1421,8 +1420,6 @@ async def cleaner_apply(req: Request):
             )
 
     return {"ok": True}
-
-ADMIN_BOT_TOKEN = os.getenv("ADMIN_BOT_TOKEN")
 
 async def send_to_admin(text: str):
     if not ADMIN_BOT_TOKEN:
@@ -1643,7 +1640,11 @@ async def cleaner_orders(user_id: int):
     if int(user_id) not in APPROVED_CLEANERS:
         return []
 
-    return [o for o in ORDERS if o["cleaner_id"] is None]
+    return [
+        o for o in ORDERS
+        if o["cleaner_id"] is None
+        and o["status"] == "new"
+    ]
 
 @app.post("/cleaner/take_order")
 async def take_order(req: Request):
