@@ -320,6 +320,7 @@ function humanStatus(s){
     on_way: "Клинер выехал",
     cleaning: "Уборка идёт",
     done: "Завершено"
+    cancelled: "❌ Отменён",
   }[s] || "—"
 }
 
@@ -1204,7 +1205,7 @@ function cleanerAvailable(){
       </div>
 
       <div style="margin-top:10px;font-weight:600">
-        💰 ${o.price} ₽
+        💰 Доход: ${o.cleaner_income} ₽
       </div>
 
       <div class="btn" onclick="takeOrder(${o.id})">
@@ -1521,7 +1522,9 @@ async def order(req: Request):
         f"Адрес: {address}\n"
         f"Дата: {data.get('date')} {data.get('time')}\n"
         f"Метраж: {area} м²\n"
-        f"Цена: {price} ₽\n"
+        f"Цена клиента: {price} ₽\n"
+        f"Доход клинера: {order_obj['cleaner_income']} ₽\n"
+        f"Комиссия сервиса: {order_obj['platform_fee']} ₽\n"
         f"Комментарий: {comment or '—'}"
     ))
 
@@ -1636,6 +1639,8 @@ async def take_order(req: Request):
     )
 
     return {"ok": True}
+
+
 
 @app.get("/cleaner/my_orders")
 async def cleaner_my_orders(user_id: int):
@@ -1944,3 +1949,101 @@ async def rate_order(req: Request):
             return {"ok": True}
 
     return {"error": "order_not_found"}
+
+@app.post("/admin/cancel_order")
+async def admin_cancel_order(req: Request):
+    data = await req.json()
+    order_id = data.get("order_id")
+    reason = data.get("reason", "Отменено администратором")
+
+    order = next((o for o in ORDERS if o["id"] == order_id), None)
+    if not order:
+        return {"error": "order_not_found"}
+
+    if order["status"] == "done":
+        return {"error": "already_done"}
+
+    order["status"] = "cancelled"
+
+    client_id = order.get("client_id")
+    cleaner_id = order.get("cleaner_id")
+
+    # клиенту
+    await send_message_to_user(
+        client_id,
+        f"❌ Ваш заказ #{order_id} отменён администратором.\n"
+        f"Причина: {reason}"
+    )
+
+    # клинеру
+    if cleaner_id:
+        await send_message_to_user(
+            cleaner_id,
+            f"❌ Заказ #{order_id} отменён администратором.\n"
+            f"Вы освобождены от выполнения."
+        )
+
+    await send_to_admin(f"❌ Заказ #{order_id} отменён администратором")
+
+    return {"ok": True}
+
+@app.post("/admin/unassign_order")
+async def admin_unassign_order(req: Request):
+    data = await req.json()
+    order_id = data.get("order_id")
+
+    order = next((o for o in ORDERS if o["id"] == order_id), None)
+    if not order:
+        return {"error": "order_not_found"}
+
+    cleaner_id = order.get("cleaner_id")
+    if not cleaner_id:
+        return {"error": "no_cleaner_assigned"}
+
+    order["cleaner_id"] = None
+    order["status"] = "new"
+
+    await send_message_to_user(
+        cleaner_id,
+        f"🔄 Заказ #{order_id} снят администратором.\n"
+        f"Заказ снова доступен другим клинерам."
+    )
+
+    await send_to_admin(
+        f"🔄 Заказ #{order_id} снят с клинера {cleaner_id}"
+    )
+
+    return {"ok": True}
+
+@app.get("/admin/orders")
+async def admin_orders():
+    return [
+        {
+            "id": o["id"],
+            "status": o["status"],
+            "price": o["price"],
+            "cleaner_id": o.get("cleaner_id")
+        }
+        for o in ORDERS
+        if o["status"] not in ("done", "cancelled")
+    ]
+
+@app.get("/admin/cleaners")
+async def admin_cleaners():
+    out = []
+
+    for cid in APPROVED_CLEANERS:
+        out.append({
+            "id": cid,
+            "name": "—",
+            "status": "approved"
+        })
+
+    for cid, data in CLEANER_REQUESTS.items():
+        out.append({
+            "id": int(cid),
+            "name": data.get("name", "—"),
+            "status": "pending"
+        })
+
+    return out
