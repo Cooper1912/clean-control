@@ -22,7 +22,37 @@ dp = Dispatcher()
 router = Router()
 dp.include_router(router)
 
+
 # ================= START ==================
+
+@router.message(Command("approve"))
+async def approve_cleaner(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    uid = message.text.replace("/approve", "").strip()
+    if not uid.isdigit():
+        await message.answer("Использование: /approve <user_id>")
+        return
+
+    async with httpx.AsyncClient() as client:
+        await client.get(
+            f"{API_BASE}/cleaner/approve?user_id={uid}"
+        )
+
+    await message.answer(f"✅ Клинер {uid} одобрен")
+
+@router.message(Command("reject"))
+async def reject_cleaner(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    uid = message.text.replace("/reject", "").strip()
+    if not uid.isdigit():
+        await message.answer("Использование: /reject <user_id>")
+        return
+
+    await message.answer(f"❌ Клинер {uid} отклонён")
 
 @router.message(Command("start"))
 async def start(message: Message):

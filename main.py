@@ -1395,36 +1395,12 @@ async def cleaner_apply(req: Request):
     )
 
     async with httpx.AsyncClient() as client:
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="✅ Одобрить",
-                    callback_data=f"approve_cleaner:{uid}"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="❌ Отказать",
-                    callback_data=f"reject_cleaner:{uid}"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="💬 Задать вопрос",
-                    callback_data=f"ask_cleaner:{uid}"
-                )
-            ]
-        ])
-
         async with httpx.AsyncClient(timeout=5) as client:
             await client.post(
                 f"https://api.telegram.org/bot{ADMIN_BOT_TOKEN}/sendMessage",
                 json={
                     "chat_id": ADMIN_ID,
                     "text": text,
-                    "reply_markup": kb.model_dump()
                 }
             )
 
