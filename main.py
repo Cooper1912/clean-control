@@ -2,17 +2,35 @@ import httpx
 import asyncio
 import os
 import json
+import re
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 
 
 BOT_TOKEN = os.getenv("CLIENT_BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID"))
+ADMIN_ID = int(os.getenv("ADMIN_ID", 0))
 
 APPROVED_CLEANERS = set()
 CLEANER_REQUESTS = {}
 
 ORDERS = []
+
+TARIFFS = {
+    "Поддерживающая": 100,
+    "Генеральная": 150,
+    "После ремонта": 250
+}
+
+EXTRAS_PRICES = {
+    "Окно": 600,
+    "Панорамное окно": 1200,
+    "Балкон": 1000,
+    "Холодильник": 500,
+    "Духовка": 500,
+    "Микроволновка": 300,
+    "Вытяжка": 300,
+    "Шкафы внутри": 1000
+}
 
 
 app = FastAPI()
@@ -128,6 +146,18 @@ input,select{width:100%;padding:14px;margin-top:10px;border-radius:10px;border:1
 <div id="screen" class="card"></div>
 
 <script>
+function onlyDigits(el){
+  el.value = el.value.replace(/\D/g, '')
+}
+
+function digitsAndText(el){
+  el.value = el.value.replace(/[^a-zA-Zа-яА-Я0-9\s.,\-]/g, '')
+}
+
+function onlyText(el){
+  el.value = el.value.replace(/[^a-zA-Zа-яА-Я\s\-]/g, '')
+}
+
 const API_BASE = window.location.origin
 const tg = window.Telegram?.WebApp || null
 if (tg) {
@@ -263,6 +293,14 @@ function renderLastOrder(list){
       ${o.date} ${o.time}<br>
       <b>${o.price} ₽</b><br>
       <small>Статус: ${humanStatus(o.status)}</small>
+      ${o.status === "done" && o.payment_status !== "paid"
+  ? `
+    <div class="btn" onclick="payOrder(${o.id})">
+      💳 Оплатить ${o.price} ₽
+    </div>
+  `
+  : ""
+}
       ${renderRating(o)}
     </div>
   `
@@ -544,7 +582,7 @@ screen.innerHTML = `
   📞 <b>Телефон клиента:</b><br>
   ${o.phone}<br><br>
 
-  💰 <b>Оплата:</b> ${o.price} ₽<br><br>
+  💰 <b>Доход:</b> ${o.cleaner_income} ₽
 
   <div class="btn" onclick="setStatus(${o.id}, 'on_way')">🚗 Выехал</div>
   <div class="btn" onclick="setStatus(${o.id}, 'cleaning')">🧽 Начал уборку</div>
@@ -625,7 +663,6 @@ function chooseType(){
 
 function setType(t){
   order.type = t
-  order.rate = TARIFFS[t]
   askContacts()
 }
 
@@ -641,13 +678,31 @@ function maskPhone(el){
 
 function askContacts(){
   screen.innerHTML=`
-    <input id="name" placeholder="Имя">
-    <input id="phone" placeholder="+7 (___) ___-__-__" oninput="maskPhone(this)">
-    <input id="street" placeholder="Улица и дом">
+    <input id="name"
+      placeholder="Имя"
+      oninput="onlyText(this)">
+    <input id="phone"
+      placeholder="+7 (___) ___-__-__"
+      inputmode="tel"
+      oninput="maskPhone(this)">
+    <input id="street"
+      placeholder="Улица и дом"
+      oninput="digitsAndText(this)">
     <div class="row">
-      <input id="entrance" class="small" placeholder="Подъезд">
-      <input id="floor" class="small" placeholder="Этаж">
-      <input id="flat" class="small" placeholder="Кв">
+    <input id="entrance" class="small"
+      placeholder="Подъезд"
+      inputmode="numeric"
+      oninput="onlyDigits(this)">
+
+    <input id="floor" class="small"
+      placeholder="Этаж"
+      inputmode="numeric"
+      oninput="onlyDigits(this)">
+
+    <input id="flat" class="small"
+      placeholder="Кв"
+      inputmode="numeric"
+      oninput="onlyDigits(this)">
     </div>
     <input id="date" type="date">
     <select id="time">
@@ -664,7 +719,10 @@ function askContacts(){
         <option>18:00</option>
         <option>19:00</option>
     </select>
-    <input id="area" placeholder="Метраж м²">
+    <input id="area"
+      placeholder="Метраж м²"
+      inputmode="numeric"
+      oninput="onlyDigits(this)">
     <textarea id="comment"
   placeholder="Комментарий для клинера (ключи, животные, пожелания)"
   style="width:100%;height:90px;padding:12px;
@@ -706,18 +764,10 @@ if(isNaN(parseInt(areaEl.value)) || parseInt(areaEl.value) <= 0){
   order.time = timeEl.value
   order.area = parseInt(areaEl.value || 0)
   order.comment = commentEl ? commentEl.value.trim() : ""
-  if(!order.rate){
-  order.rate = TARIFFS[order.type]
-}
 renderExtras()
 }
 
 function renderExtras(){
-
-    if(!order.rate){
-        order.rate = TARIFFS[order.type]
-}
-
   let html="<h3>Допы</h3>"
 
   for(let k in EXTRAS){
@@ -734,12 +784,13 @@ function renderExtras(){
     `
   }
 
-  html += `<div id="livePrice" style="margin-top:15px;font-weight:600"></div>`
+  html += `<div style="margin-top:15px;font-weight:600;opacity:.6">
+  Итоговая стоимость будет показана перед оформлением
+</div>`
   html += `<div class="btn" onclick="confirm()">Итог</div>`
   html += `<div class="btn" onclick="askContacts()">Назад</div>`
 
   screen.innerHTML = html
-  updateLivePrice()
 }
 
 function extras(){
@@ -747,19 +798,39 @@ function extras(){
 }
 
 function confirm(){
-  let base = (order.area || 0) * (order.rate || 0)
-  let extras=0
-  for(let k in order.extras){
-    extras+=EXTRAS[k]*(order.extras[k]||0)
-  }
-  order.price=base+extras
+  screen.innerHTML = "<h3>Считаем стоимость…</h3>"
 
-  screen.innerHTML=`
-    <h3>Итого: ${order.price} ₽</h3>
-    <div class="btn" onclick="tap(); send()">Оформить</div>
-    <div class="btn" onclick="tap(); extras()">Назад</div>
+  fetch(API_BASE + "/order/preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      type: order.type,
+      area: order.area,
+      extras: order.extras
+    })
+  })
+  .then(r => r.json())
+  .then(d => {
+    if(d.error){
+      alert("Ошибка расчёта стоимости")
+      extras()
+      return
+    }
 
-  `
+    order.price = d.price   // ✅ ВАЖНО — сохраняем цену
+
+    screen.innerHTML = `
+      <h3>Итого: ${d.price} ₽</h3>
+
+      <div class="btn" onclick="tap(); send()">
+        Оформить заказ
+      </div>
+
+      <div class="btn" onclick="tap(); extras()">
+        Назад
+      </div>
+    `
+  })
 }
 
 function changeExtra(name, delta){
@@ -769,67 +840,64 @@ function changeExtra(name, delta){
   if(order.extras[name] > 10) order.extras[name] = 10   // защита от 100 окон
 
   document.getElementById("count_"+name).innerText = order.extras[name]
-  updateLivePrice()
-}
-
-function updateLivePrice(){
-
-    if(!order.rate){
-        order.rate = TARIFFS[order.type]
-}
-  let base = (order.area || 0) * (order.rate || 0)
-  let extras = 0
-
-  for(let k in order.extras){
-    extras += EXTRAS[k] * order.extras[k]
-  }
-
-  document.getElementById("livePrice").innerText =
-    "Текущая сумма: " + (base + extras) + " ₽"
 }
 
 function send(){
   if (send.locked) return
   send.locked = true
 
-  order.user_id = user_id
+  const payload = {
+    user_id: user_id,
+    type: order.type,
+    area: order.area,
+    extras: order.extras,
+
+    name: order.name,
+    phone: order.phone,
+    address: order.address,
+
+    date: order.date,
+    time: order.time,
+    comment: order.comment
+  }
 
   screen.innerHTML = `
-    <h3>Оформляем заказ...</h3>
-    <p style="opacity:0.6">Пожалуйста, подождите</p>
+    <h3>Оформляем заказ…</h3>
+    <p style="opacity:0.6">Считаем стоимость</p>
   `
 
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 3000) // ⏱ 3 сек
-
   fetch(API_BASE + "/order", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify(order),
-  signal: controller.signal
-})
-.then(async r => {
-  const data = await r.json()
-  if (data.error) throw new Error(data.error)
-  return data
-})
-.then(() => {
-  clearTimeout(timeout)
-  send.locked = false
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  })
+  .then(r => r.json())
+  .then(data => {
+    send.locked = false
 
-  cachedOrders.unshift({ ...order }) // ← ВАЖНО
-  order = { extras:{} }
+    if(data.error){
+      alert("Ошибка оформления заказа")
+      afterOrderMenu()
+      return
+    }
 
-  renderLastOrder(cachedOrders) // мгновенно
-  clientMenu()                  // и потом обновление
-})
-.catch(() => {
-  clearTimeout(timeout)
-  send.locked = false
-  order = { extras:{} }
+    // 👇 ВАЖНО: сервер вернул цену
+    order.price = data.price
 
-  clientMenu()
-})
+    cachedOrders.unshift({
+      ...order,
+      price: data.price,
+      status: "new",
+      id: data.order_id
+    })
+
+    order = { extras:{} }
+    afterOrderMenu()
+  })
+  .catch(() => {
+    send.locked = false
+    clientMenu()
+  })
 }
 
 function afterOrderMenu(){
@@ -936,6 +1004,15 @@ function renderOrdersList(list){
 
         ${renderTimeline(timelineStatus)}
 
+        ${o.status === "done" && o.payment_status !== "paid"
+          ? `
+            <div class="btn" onclick="payOrder(${o.id})">
+              💳 Оплатить уборку ${o.price} ₽
+            </div>
+          `
+          : ""
+        }
+
         <div class="btn"
           style="margin-top:12px;opacity:${canGetPhotos ? 1 : 0.4}"
           onclick="${canGetPhotos ? `requestPhotos(${o.id})` : ''}">
@@ -986,16 +1063,35 @@ function cleanerEntry(){
 function cleanerForm(){
  screen.innerHTML=`
   <h3>Стать клинером</h3>
-  <input id="c_name" placeholder="Имя">
-  <input id="c_phone" placeholder="Телефон">
-  <input id="c_district" placeholder="Район">
-  <input id="c_exp" placeholder="Опыт (лет)">
+  <input id="c_name"
+    placeholder="Имя"
+    oninput="onlyText(this)">
+  <input id="c_phone"
+    placeholder="+7 (___) ___-__-__"
+    inputmode="tel"
+    oninput="maskPhone(this)">
+  <input id="c_district"
+    placeholder="Район"
+    oninput="digitsAndText(this)">
+  <input id="c_exp"
+    placeholder="Опыт (лет)"
+    inputmode="numeric"
+    oninput="onlyDigits(this)">
   <div class="btn" onclick="sendCleaner()">Отправить заявку</div>
   <div class="btn" onclick="start()">Назад</div>
  `
 }
 
 function sendCleaner(){
+if(!c_name.value || !c_phone.value || !c_district.value || !c_exp.value){
+  alert("Заполните все поля")
+  return
+}
+
+if(isNaN(parseInt(c_exp.value))){
+  alert("Опыт должен быть числом")
+  return
+}
  fetch(API_BASE + "/cleaner/apply",{
   method:"POST",
   headers:{"Content-Type":"application/json"},
@@ -1091,6 +1187,32 @@ function requestPhotos(orderId){
   .then(r => r.json())
   .then(() => {
     alert("📸 Фото отправлены в чат")
+  })
+}
+
+function payOrder(orderId){
+  screen.innerHTML = `
+    <h3>Проводим оплату…</h3>
+    <p style="opacity:.6">Пожалуйста, подождите</p>
+  `
+
+  fetch(API_BASE + "/order/pay", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      order_id: orderId,
+      user_id: user_id
+    })
+  })
+  .then(r => r.json())
+  .then(res => {
+    if(res.ok){
+      alert("✅ Оплата прошла успешно")
+      myOrders()
+    } else {
+      alert("❌ Ошибка оплаты")
+      myOrders()
+    }
   })
 }
 
@@ -1210,43 +1332,155 @@ async def send_message_to_user(user_id: int, text: str):
         print("User notify error:", e)
         return None
     
+def clean_str(v, max_len=200):
+    if not isinstance(v, str):
+        return ""
+    return v.strip()[:max_len]
+    
 
 @app.post("/order")
 async def order(req: Request):
     data = await req.json()
 
+    # ===== VALIDATION =====
+
+    # user
+    if not data.get("user_id"):
+        return {"error": "no_user"}
+
+    # area
+    try:
+        area = int(data.get("area", 0))
+        if area <= 0 or area > 1000:
+            raise ValueError
+    except:
+        return {"error": "invalid_area"}
+
+    # phone
+    phone = re.sub(r"\D", "", str(data.get("phone", "")))
+    if len(phone) < 10:
+        return {"error": "invalid_phone"}
+
+    # strings
+    name = clean_str(data.get("name"), 50)
+    address = clean_str(data.get("address"), 150)
+    comment = clean_str(data.get("comment"), 300)
+
+    if not name or not address:
+        return {"error": "missing_fields"}
+
+    # type
+    cleaning_type = data.get("type")
+    if cleaning_type not in TARIFFS:
+        return {"error": "invalid_type"}
+
+    # extras
+    extras = data.get("extras", {})
+    if not isinstance(extras, dict):
+        return {"error": "invalid_extras"}
+
+    # ===== PRICE CALCULATION =====
+
+    base_price = area * TARIFFS[cleaning_type]
+
+    extras_sum = 0
+    for key, count in extras.items():
+        if key not in EXTRAS_PRICES:
+            continue
+        try:
+            c = int(count)
+            if c < 0 or c > 10:
+                continue
+        except:
+            continue
+
+        extras_sum += EXTRAS_PRICES[key] * c
+
+    price = base_price + extras_sum
+
+    if price <= 0:
+        return {"error": "invalid_price"}
+
+    # ===== ORDER CREATE =====
+
     order_id = len(ORDERS) + 1
 
     order_obj = {
         "id": order_id,
-        "client_id": data["user_id"],
+        "client_id": int(data["user_id"]),
         "cleaner_id": None,
         "status": "new",
-        "comment": data.get("comment", ""),
-        "rating": None,   # ⭐️ ОЦЕНКА
+
+        "type": cleaning_type,
+        "name": name,
+        "phone": phone,
+        "address": address,
+        "date": data.get("date"),
+        "time": data.get("time"),
+        "area": area,
+        "extras": extras,
+        "price": price,
+        "platform_fee": int(price * 0.20),     # твоя комиссия (пример 20%)
+        "cleaner_income": price - int(price * 0.20),
+
+        "payment_status": "unpaid",             # unpaid | waiting | paid
+        "payout_status": "locked",              # locked | available | paid
+
+        "comment": comment,
+        "rating": None,
+
         "photos": {
             "before": [],
             "after": []
-        },
-         **data
-     }
+        }
+    }
 
     ORDERS.append(order_obj)
 
-    text = (
+    # ===== NOTIFY ADMIN =====
+
+    asyncio.create_task(send_to_telegram(
         f"🧹 Новый заказ #{order_id}\n\n"
-        f"Тип: {data.get('type')}\n"
-        f"Имя: {data.get('name')}\n"
-        f"Телефон: {data.get('phone')}\n"
-        f"Адрес: {data.get('address')}\n"
+        f"Тип: {cleaning_type}\n"
+        f"Имя: {name}\n"
+        f"Телефон: {phone}\n"
+        f"Адрес: {address}\n"
         f"Дата: {data.get('date')} {data.get('time')}\n"
-        f"Цена: {data.get('price')} ₽\n"
-        f"Комментарий: {data.get('comment', '—')}"
-    )
+        f"Метраж: {area} м²\n"
+        f"Цена: {price} ₽\n"
+        f"Комментарий: {comment or '—'}"
+    ))
 
-    asyncio.create_task(send_to_telegram(text))
+    return {"ok": True, "order_id": order_id, "price": price}
 
-    return {"ok": True, "order_id": order_id}
+@app.post("/order/preview")
+async def order_preview(req: Request):
+    data = await req.json()
+
+    try:
+        area = int(data.get("area", 0))
+    except:
+        return {"error": "bad_area"}
+
+    cleaning_type = data.get("type")
+    extras = data.get("extras", {})
+
+    if area <= 0 or cleaning_type not in TARIFFS:
+        return {"error": "bad_data"}
+
+    base_price = area * TARIFFS[cleaning_type]
+    extras_sum = 0
+
+    for k, c in extras.items():
+        if k in EXTRAS_PRICES:
+            try:
+                c = int(c)
+                if 0 <= c <= 10:
+                    extras_sum += EXTRAS_PRICES[k] * c
+            except:
+                pass
+
+    return {"price": base_price + extras_sum}
 
 @app.post("/support")
 async def support(req: Request):
@@ -1384,6 +1618,36 @@ async def order_status(req: Request):
 
     return {"error": "not found"}
 
+
+
+@app.post("/order/pay")
+async def order_pay(req: Request):
+    data = await req.json()
+
+    order_id = data.get("order_id")
+    user_id = data.get("user_id")
+
+    for o in ORDERS:
+        if o["id"] == order_id and o["client_id"] == user_id:
+            
+            if o["status"] != "done":
+                return {"error": "not_done"}
+
+            if o["payment_status"] == "paid":
+                return {"error": "already_paid"}
+            o["payment_status"] = "paid"
+            o["payout_status"] = "available"
+
+            await send_to_telegram(
+                f"💳 Заказ #{order_id} ОПЛАЧЕН\n"
+                f"Сумма: {o['price']} ₽\n"
+                f"Клинер: {o.get('cleaner_id')}"
+            )
+
+            return {"ok": True}
+
+    return {"error": "order_not_found"}
+
 @app.post("/order/photos")
 async def order_photos(req: Request):
     data = await req.json()
@@ -1457,8 +1721,6 @@ async def telegram_webhook(request: Request):
         await handle_simple_photo(message)
 
     return {"ok": True}
-
-import re
 
 async def handle_simple_photo(message):
     user_id = message["from"]["id"]
