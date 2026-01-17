@@ -13,7 +13,6 @@ from fastapi.responses import HTMLResponse
 
 BOT_TOKEN = os.getenv("CLIENT_BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID") or 8176375746)
-ADMIN_BOT_TOKEN = os.getenv("ADMIN_BOT_TOKEN")
 
 APPROVED_CLEANERS = set()
 CLEANER_REQUESTS = {}
@@ -1372,18 +1371,6 @@ async def cleaner_state(user_id: int):
 
     return {"state": "new"}
 
-@app.post("/admin/approve_cleaner")
-async def admin_approve_cleaner(req: Request):
-    data = await req.json()
-    user_id = int(data.get("user_id"))
-
-    APPROVED_CLEANERS.add(user_id)
-    CLEANER_REQUESTS.pop(str(user_id), None)
-
-    await send_to_admin(f"✅ Клинер {user_id} одобрен администратором")
-
-    return {"ok": True}
-
 @app.post("/cleaner/apply")
 async def cleaner_apply(req: Request):
     data = await req.json()
@@ -1412,7 +1399,7 @@ async def cleaner_apply(req: Request):
     )
     async with httpx.AsyncClient(timeout=5) as client:
             await client.post(
-                f"https://api.telegram.org/bot{ADMIN_BOT_TOKEN}/sendMessage",
+                f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
                 json={
                     "chat_id": ADMIN_ID,
                     "text": text,
@@ -1422,14 +1409,14 @@ async def cleaner_apply(req: Request):
     return {"ok": True}
 
 async def send_to_admin(text: str):
-    if not ADMIN_BOT_TOKEN:
-        print("ADMIN_BOT_TOKEN not set")
+    if not BOT_TOKEN:
+        print("BOT_TOKEN not set")
         return
 
     try:
         async with httpx.AsyncClient(timeout=5) as client:
             await client.post(
-                f"https://api.telegram.org/bot{ADMIN_BOT_TOKEN}/sendMessage",
+                f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
                 json={
                     "chat_id": ADMIN_ID,
                     "text": text
@@ -1954,11 +1941,6 @@ async def telegram_webhook(request: Request):
             await send_to_admin(f"❌ Клинер {cid} отклонён")
             return {"ok": True}
 
-        if text.startswith("/ask_"):
-            cid = text.replace("/ask_", "").strip()
-            await send_to_admin(f"💬 Вопрос клинеру {cid}")
-            return {"ok": True}
-
     # ====== ФОТО ОТ КЛИНЕРА ======
     if message.get("photo") or message.get("document"):
         await handle_simple_photo(message)
@@ -2088,100 +2070,3 @@ async def rate_order(req: Request):
 
     return {"error": "order_not_found"}
 
-@app.post("/admin/cancel_order")
-async def admin_cancel_order(req: Request):
-    data = await req.json()
-    order_id = data.get("order_id")
-    reason = data.get("reason", "Отменено администратором")
-
-    order = next((o for o in ORDERS if o["id"] == order_id), None)
-    if not order:
-        return {"error": "order_not_found"}
-
-    if order["status"] == "done":
-        return {"error": "already_done"}
-
-    order["status"] = "cancelled"
-
-    client_id = order.get("client_id")
-    cleaner_id = order.get("cleaner_id")
-
-    # клиенту
-    await send_message_to_user(
-        client_id,
-        f"❌ Ваш заказ #{order_id} отменён администратором.\n"
-        f"Причина: {reason}"
-    )
-
-    # клинеру
-    if cleaner_id:
-        await send_message_to_user(
-            cleaner_id,
-            f"❌ Заказ #{order_id} отменён администратором.\n"
-            f"Вы освобождены от выполнения."
-        )
-
-    await send_to_admin(f"❌ Заказ #{order_id} отменён администратором")
-
-    return {"ok": True}
-
-@app.post("/admin/unassign_order")
-async def admin_unassign_order(req: Request):
-    data = await req.json()
-    order_id = data.get("order_id")
-
-    order = next((o for o in ORDERS if o["id"] == order_id), None)
-    if not order:
-        return {"error": "order_not_found"}
-
-    cleaner_id = order.get("cleaner_id")
-    if not cleaner_id:
-        return {"error": "no_cleaner_assigned"}
-
-    order["cleaner_id"] = None
-    order["status"] = "new"
-
-    await send_message_to_user(
-        cleaner_id,
-        f"🔄 Заказ #{order_id} снят администратором.\n"
-        f"Заказ снова доступен другим клинерам."
-    )
-
-    await send_to_admin(
-        f"🔄 Заказ #{order_id} снят с клинера {cleaner_id}"
-    )
-
-    return {"ok": True}
-
-@app.get("/admin/orders")
-async def admin_orders():
-    return [
-        {
-            "id": o["id"],
-            "status": o["status"],
-            "price": o["price"],
-            "cleaner_id": o.get("cleaner_id")
-        }
-        for o in ORDERS
-        if o["status"] not in ("done", "cancelled")
-    ]
-
-@app.get("/admin/cleaners")
-async def admin_cleaners():
-    out = []
-
-    for cid in APPROVED_CLEANERS:
-        out.append({
-            "id": cid,
-            "name": "—",
-            "status": "approved"
-        })
-
-    for cid, data in CLEANER_REQUESTS.items():
-        out.append({
-            "id": int(cid),
-            "name": data.get("name", "—"),
-            "status": "pending"
-        })
-
-    return out
