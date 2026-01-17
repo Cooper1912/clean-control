@@ -1145,10 +1145,11 @@ if(isNaN(parseInt(c_exp.value))){
     name: c_name.value,
     phone: c_phone.value,
     district: c_district.value,
-    experience: c_exp.value
+    experience: c_exp.value,
     about: c_about.value.trim()
   })
- }).then(()=>{
+ })
+ .then(()=>{
    screen.innerHTML="<h3>Заявка отправлена</h3><p>Ожидайте подтверждения</p>"
  })
 }
