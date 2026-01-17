@@ -1666,15 +1666,37 @@ async def order_pay(req: Request):
             "value": f"{order['price']}.00",
             "currency": "RUB"
         },
+
         "confirmation": {
             "type": "redirect",
-            "return_url": "https://t.me/clean_control_bot?start=paid"
+            "return_url": "https://clean-control.onrender.com/"
         },
+
         "capture": True,
-        "description": f"Уборка, заказ #{order_id}",
+
+        "description": f"Уборка квартиры. Заказ №{order_id}",
+
+        "receipt": {
+            "customer": {
+                "email": "test@example.com"   # ⚠️ пока тестовый
+            },
+            "items": [
+                {
+                     "description": f"Уборка квартиры, заказ №{order_id}",
+                     "quantity": "1.00",
+                     "amount": {
+                         "value": f"{order['price']}.00",
+                         "currency": "RUB"
+                     },
+                     "vat_code": 1   # без НДС
+                }
+             ]
+        },
+
         "metadata": {
             "order_id": order_id
         }
+
     }, uuid.uuid4())
 
     order["payment_status"] = "waiting"
@@ -1774,7 +1796,7 @@ async def order_photos(req: Request):
                 "media": media
             }
         )
-        order["photos_sent"] = True
+        order["photos_sent"]
 
     return {"ok": True, "sent": len(media)}
 
@@ -1863,4 +1885,3 @@ async def rate_order(req: Request):
             return {"ok": True}
 
     return {"error": "order_not_found"}
-
