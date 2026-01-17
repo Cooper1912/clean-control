@@ -692,6 +692,9 @@ function askContacts(){
       placeholder="+7 (___) ___-__-__"
       inputmode="tel"
       oninput="maskPhone(this)">
+      <input id="email"
+        placeholder="Email для чека"
+        inputmode="email">
     <input id="street"
       placeholder="Улица и дом"
       oninput="digitsAndText(this)">
@@ -743,6 +746,7 @@ function askContacts(){
 function goToExtras(){
 const nameEl = document.getElementById("name")
 const phoneEl = document.getElementById("phone")
+const emailEl = document.getElementById("email")
 const streetEl = document.getElementById("street")
 const flatEl = document.getElementById("flat")
 const dateEl = document.getElementById("date")
@@ -751,8 +755,8 @@ const areaEl = document.getElementById("area")
 const commentEl = document.getElementById("comment")
 
 if(
-  !nameEl || !phoneEl || !streetEl || !flatEl || !dateEl || !timeEl || !areaEl ||
-  !nameEl.value || !phoneEl.value || !streetEl.value || !flatEl.value ||
+  !nameEl || !phoneEl || !emailEl || !streetEl || !flatEl || !dateEl || !timeEl || !areaEl ||
+  !nameEl.value || !phoneEl.value || !emailEl.value || !streetEl.value || !flatEl.value ||
   !dateEl.value || !timeEl.value || !areaEl.value
 ){
   alert("Пожалуйста, заполните все поля")
@@ -766,6 +770,7 @@ if(isNaN(parseInt(areaEl.value)) || parseInt(areaEl.value) <= 0){
 
   order.name = nameEl.value
   order.phone = phoneEl.value
+  order.email = emailEl.value.trim()
   order.address = streetEl.value + " кв." + flatEl.value
   order.date = dateEl.value
   order.time = timeEl.value
@@ -861,6 +866,7 @@ function send(){
 
     name: order.name,
     phone: order.phone,
+    email: order.email,
     address: order.address,
 
     date: order.date,
@@ -1170,19 +1176,44 @@ function cleanerAvailable(){
       let html = "<h3>📦 Доступные заказы</h3>"
 
       list.forEach(o => {
-        html += `
-          <div style="border:1px solid #ddd;padding:12px;margin:12px 0;border-radius:12px;">
-            <b>${o.type}</b><br>
-            ${o.address}<br>
-            ${o.date} ${o.time}<br>
-            <b>${o.price} ₽</b>
 
-            <div class="btn" onclick="takeOrder(${o.id})">
-              🖐 Взять заказ
-            </div>
-          </div>
-        `
-      })
+  const extrasText = renderExtrasText(o.extras)
+
+  html += `
+    <div style="
+      border:1px solid #ddd;
+      padding:14px;
+      margin:14px 0;
+      border-radius:14px;
+      background:#fff;
+    ">
+
+      <div style="font-weight:600;font-size:16px">
+        🧹 ${o.type}
+      </div>
+
+      <div style="margin-top:6px;font-size:14px;opacity:.85">
+        📅 ${o.date}<br>
+        ⏰ ${o.time}<br>
+        📐 ${o.area} м²
+      </div>
+
+      <div style="margin-top:8px;font-size:14px">
+        🧰 <b>Допы:</b><br>
+        ${extrasText}
+      </div>
+
+      <div style="margin-top:10px;font-weight:600">
+        💰 ${o.price} ₽
+      </div>
+
+      <div class="btn" onclick="takeOrder(${o.id})">
+        🖐 Взять заказ
+      </div>
+
+    </div>
+  `
+})
 
       html += `
         <div class="btn" onclick="tap(); cleanerOrders()">Мои активные</div>
@@ -1223,13 +1254,27 @@ function payOrder(orderId){
   })
   .then(r => r.json())
   .then(res => {
-    if(res.confirmation_url){
-      window.location.href = res.confirmation_url
-    } else {
-      alert("❌ Не удалось создать платёж")
-      myOrders()
-    }
-  })
+
+  if (res.confirmation_url) {
+    window.location.href = res.confirmation_url
+    return
+  }
+
+  if (res.error === "already_paid") {
+    alert("✅ Заказ уже оплачен")
+    myOrders()
+    return
+  }
+
+  if (res.error === "payment_already_created") {
+    alert("⏳ Платёж уже создан, завершите оплату")
+    myOrders()
+    return
+  }
+
+  alert("❌ Не удалось создать платёж")
+  myOrders()
+})
 }
 
 function renderRating(order){
@@ -1291,7 +1336,7 @@ async def approve_cleaner(user_id: int):
     APPROVED_CLEANERS.add(int(user_id))
     CLEANER_REQUESTS.pop(str(user_id), None)
 
-    await send_to_telegram(f"✅ Клинер {user_id} одобрен")
+    await send_to_admin(f"✅ Клинер {user_id} одобрен")
 
     return {
         "ok": True,
@@ -1322,15 +1367,24 @@ async def cleaner_apply(req: Request):
 
     return {"ok": True}
 
-async def send_to_telegram(text: str):
+ADMIN_BOT_TOKEN = os.getenv("ADMIN_BOT_TOKEN")
+
+async def send_to_admin(text: str):
+    if not ADMIN_BOT_TOKEN:
+        print("ADMIN_BOT_TOKEN not set")
+        return
+
     try:
         async with httpx.AsyncClient(timeout=5) as client:
             await client.post(
-                f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-                json={"chat_id": ADMIN_ID, "text": text}
+                f"https://api.telegram.org/bot{ADMIN_BOT_TOKEN}/sendMessage",
+                json={
+                    "chat_id": ADMIN_ID,
+                    "text": text
+                }
             )
     except Exception as e:
-        print("Telegram error:", e)
+        print("Admin telegram error:", e)
 
 async def send_message_to_user(user_id: int, text: str):
     try:
@@ -1376,11 +1430,15 @@ async def order(req: Request):
     phone = re.sub(r"\D", "", str(data.get("phone", "")))
     if len(phone) < 10:
         return {"error": "invalid_phone"}
+    
+    if not email or "@" not in email:
+        return {"error": "invalid_email"}
 
     # strings
     name = clean_str(data.get("name"), 50)
     address = clean_str(data.get("address"), 150)
     comment = clean_str(data.get("comment"), 300)
+    email = clean_str(data.get("email"), 100)
 
     if not name or not address:
         return {"error": "missing_fields"}
@@ -1430,6 +1488,7 @@ async def order(req: Request):
         "type": cleaning_type,
         "name": name,
         "phone": phone,
+        "email": email,
         "address": address,
         "date": data.get("date"),
         "time": data.get("time"),
@@ -1457,7 +1516,7 @@ async def order(req: Request):
 
     # ===== NOTIFY ADMIN =====
 
-    asyncio.create_task(send_to_telegram(
+    asyncio.create_task(send_to_admin(
         f"🧹 Новый заказ #{order_id}\n\n"
         f"Тип: {cleaning_type}\n"
         f"Имя: {name}\n"
@@ -1511,7 +1570,7 @@ async def support(req: Request):
         f"{data.get('message')}"
     )
 
-    asyncio.create_task(send_to_telegram(text))
+    asyncio.create_task(send_to_admin(text))
 
     return {"ok": True}
 
@@ -1572,7 +1631,7 @@ async def take_order(req: Request):
     order_to_take["cleaner_id"] = cleaner_id
     order_to_take["status"] = "taken"
 
-    await send_to_telegram(
+    await send_to_admin(
         f"🧹 Заказ #{order_id} взят клинером\n"
         f"Клинер: {cleaner_id}\n"
         f"Дата: {order_date}\n"
@@ -1626,7 +1685,7 @@ async def order_status(req: Request):
             )
 
             # 🔔 Уведомление админу
-            await send_to_telegram(
+            await send_to_admin(
                 f"📦 Статус заказа #{order_id}\n"
                 f"{status_text}\n"
                 f"Клинер: {cleaner_id}"
@@ -1660,8 +1719,9 @@ async def order_pay(req: Request):
     
     if order["payment_status"] == "waiting":
         return {"error": "payment_already_created"}
-
-    payment = Payment.create({
+    
+    payment = Payment.create(
+    {
         "amount": {
             "value": f"{order['price']}.00",
             "currency": "RUB"
@@ -1678,26 +1738,28 @@ async def order_pay(req: Request):
 
         "receipt": {
             "customer": {
-                "email": "test@example.com"   # ⚠️ пока тестовый
+                "email": order.get("email") or "test@example.com" # или временно test@example.com
             },
+            "tax_system_code": 6,  # НПД / самозанятый
             "items": [
                 {
-                     "description": f"Уборка квартиры, заказ №{order_id}",
-                     "quantity": "1.00",
-                     "amount": {
-                         "value": f"{order['price']}.00",
-                         "currency": "RUB"
-                     },
-                     "vat_code": 1   # без НДС
+                    "description": f"Уборка квартиры, заказ №{order_id}",
+                    "quantity": "1.00",
+                    "amount": {
+                        "value": f"{order['price']}.00",
+                        "currency": "RUB"
+                    },
+                    "vat_code": 1
                 }
-             ]
+            ]
         },
 
         "metadata": {
             "order_id": order_id
         }
-
-    }, uuid.uuid4())
+    },
+    uuid.uuid4()
+)
 
     order["payment_status"] = "waiting"
     order["payment_id"] = payment.id
@@ -1728,7 +1790,7 @@ async def yookassa_webhook(req: Request):
     order["payment_status"] = "paid"
     order["payout_status"] = "available"
 
-    await send_to_telegram(
+    await send_to_admin(
         f"💰 Оплата получена\n"
         f"Заказ #{order_id}\n"
         f"Сумма: {order['price']} ₽"
@@ -1876,7 +1938,7 @@ async def rate_order(req: Request):
 
             o["rating"] = int(rating)
 
-            await send_to_telegram(
+            await send_to_admin(
                 f"⭐️ Оценка заказа #{order_id}\n"
                 f"Оценка: {rating}/5\n"
                 f"Клинер: {o.get('cleaner_id')}"
