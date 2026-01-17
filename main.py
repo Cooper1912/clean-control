@@ -1448,7 +1448,9 @@ async def order(req: Request):
         "photos": {
             "before": [],
             "after": []
-        }
+        },
+        "photos_sent": False,    # фото отправлялись или нет
+        "receipt": None        # чек
     }
 
     ORDERS.append(order_obj)
@@ -1730,6 +1732,9 @@ async def order_photos(req: Request):
     # 2️⃣ проверяем доступ
     if order.get("client_id") != user_id:
         return {"error": "no_access"}
+    
+    if order.get("photos_sent"):
+        return {"error": "already_sent"}
 
     # 3️⃣ собираем альбом
     media = []
@@ -1769,6 +1774,7 @@ async def order_photos(req: Request):
                 "media": media
             }
         )
+        order["photos_sent"] = True
 
     return {"ok": True, "sent": len(media)}
 
