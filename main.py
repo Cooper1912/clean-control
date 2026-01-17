@@ -1091,20 +1091,37 @@ function cleanerEntry(){
 function cleanerForm(){
  screen.innerHTML=`
   <h3>Стать клинером</h3>
+
   <input id="c_name"
     placeholder="Имя"
     oninput="onlyText(this)">
+
   <input id="c_phone"
     placeholder="+7 (___) ___-__-__"
     inputmode="tel"
     oninput="maskPhone(this)">
+
   <input id="c_district"
     placeholder="Район"
     oninput="digitsAndText(this)">
+
   <input id="c_exp"
     placeholder="Опыт (лет)"
     inputmode="numeric"
     oninput="onlyDigits(this)">
+
+  <textarea id="c_about"
+    placeholder="О себе: опыт, инвентарь, авто, районы, чем вы хороши"
+    style="
+      width:100%;
+      height:120px;
+      padding:12px;
+      margin-top:10px;
+      border-radius:10px;
+      border:1px solid #ddd;
+      font-size:15px;
+    "></textarea>
+
   <div class="btn" onclick="sendCleaner()">Отправить заявку</div>
   <div class="btn" onclick="start()">Назад</div>
  `
@@ -1129,6 +1146,7 @@ if(isNaN(parseInt(c_exp.value))){
     phone: c_phone.value,
     district: c_district.value,
     experience: c_exp.value
+    about: c_about.value.trim()
   })
  }).then(()=>{
    screen.innerHTML="<h3>Заявка отправлена</h3><p>Ожидайте подтверждения</p>"
@@ -1353,19 +1371,61 @@ async def cleaner_apply(req: Request):
     data = await req.json()
     uid = str(data["user_id"])
 
-    CLEANER_REQUESTS[uid] = data
+    CLEANER_REQUESTS[uid] = {
+        "user_id": uid,
+        "name": data["name"],
+        "phone": data["phone"],
+        "district": data["district"],
+        "experience": data["experience"],
+        "about": clean_str(data.get("about"), 500)
+    }
 
     text = (
         "🧽 Заявка клинера\n\n"
-        f"Имя: {data['name']}\n"
-        f"Телефон: {data['phone']}\n"
-        f"Район: {data['district']}\n"
-        f"Опыт: {data['experience']}\n\n"
-        f"Одобрить клинера:\nhttps://clean-control.onrender.com/cleaner/approve?user_id={uid}"
+        f"👤 Имя: {data['name']}\n"
+        f"📞 Телефон: {data['phone']}\n"
+        f"📍 Район: {data['district']}\n"
+        f"🕒 Опыт: {data['experience']} лет\n\n"
+        f"📝 О себе:\n{data.get('about','—')}\n\n"
+        f"Команды:\n"
+        f"/approve_{uid} — ✅ Одобрить\n"
+        f"/reject_{uid} — ❌ Отказать\n"
+        f"/ask_{uid} — 💬 Задать вопрос"
     )
 
     async with httpx.AsyncClient() as client:
-        await send_to_admin(text)
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ Одобрить",
+                    callback_data=f"approve_cleaner:{uid}"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="❌ Отказать",
+                    callback_data=f"reject_cleaner:{uid}"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="💬 Задать вопрос",
+                    callback_data=f"ask_cleaner:{uid}"
+                )
+            ]
+        ])
+
+        async with httpx.AsyncClient(timeout=5) as client:
+            await client.post(
+                f"https://api.telegram.org/bot{ADMIN_BOT_TOKEN}/sendMessage",
+                json={
+                    "chat_id": ADMIN_ID,
+                    "text": text,
+                    "reply_markup": kb.model_dump()
+                }
+            )
 
     return {"ok": True}
 
