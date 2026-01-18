@@ -4,15 +4,17 @@ import os
 import json
 import re
 import uuid
+import itertools
+
 from yookassa import Configuration, Payment
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 
 
-
-
 BOT_TOKEN = os.getenv("CLIENT_BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID") or 8176375746)
+
+ORDER_SEQ = itertools.count(1)
 
 APPROVED_CLEANERS = set()
 CLEANER_REQUESTS = {}
@@ -26,14 +28,14 @@ TARIFFS = {
 }
 
 EXTRAS_PRICES = {
-    "Окно": 600,
-    "Панорамное окно": 1200,
+    "Окно": 500,
+    "Панорамное окно": 800,
     "Балкон": 1000,
-    "Холодильник": 500,
-    "Духовка": 500,
+    "Холодильник": 450,
+    "Духовка": 450,
     "Микроволновка": 300,
     "Вытяжка": 300,
-    "Шкафы внутри": 1000
+    "Шкафы внутри": 950
 }
 
 
@@ -233,8 +235,10 @@ function start(){
 function clientMenu(){
 
   if (window.location.search.includes("paid")) {
-  myOrders()
-   }
+    setTimeout(() => {
+      myOrders()
+    }, 1500)
+  }
 
   screen.innerHTML = `
     <h3>${user.first_name || "Здравствуйте"} 👋</h3>
@@ -304,7 +308,25 @@ function renderLastOrder(list){
       ${o.date} ${o.time}<br>
       <b>${o.price} ₽</b><br>
       <small>Статус: ${humanStatus(o.status)}</small>
-      ${o.status === "done" && o.payment_status !== "paid"
+
+${
+  (() => {
+    if (
+      o.status === "done" &&
+      o.payment_status !== "paid" &&
+      o.payment_id
+    ) {
+      fetch(API_BASE + "/order/check_payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ order_id: o.id })
+      })
+    }
+    return ""
+  })()
+}
+
+${o.status === "done" && o.payment_status !== "paid"
   ? `
     <div class="btn" onclick="payOrder(${o.id})">
       💳 Оплатить ${o.price} ₽
@@ -1031,6 +1053,23 @@ function renderOrdersList(list){
 
         ${renderTimeline(timelineStatus)}
 
+          ${
+            (() => {
+              if (
+                o.status === "done" &&
+                o.payment_status !== "paid" &&
+                o.payment_id
+              ) {
+                fetch(API_BASE + "/order/check_payment", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ order_id: o.id })
+                })
+              }
+              return ""
+            })()
+          }
+        
         ${
           o.payment_status === "paid"
             ? `<div style="margin-top:10px;color:green;font-weight:600">
@@ -1516,7 +1555,7 @@ async def order(req: Request):
 
     # ===== ORDER CREATE =====
 
-    order_id = len(ORDERS) + 1
+    order_id = next(ORDER_SEQ)
 
     order_obj = {
         "id": order_id,
@@ -1776,7 +1815,7 @@ async def order_pay(req: Request):
 
         "confirmation": {
             "type": "redirect",
-            "return_url": "https://clean-control.onrender.com/"
+            "return_url": "https://clean-control.onrender.com/?paid=1"
         },
 
         "capture": True,
@@ -2041,6 +2080,27 @@ async def handle_simple_photo(message):
         f"Заказ #{order_id}\n"
         f"Фото: {len(order['photos'][kind])}/{MAX_PHOTOS}"
     )
+
+@app.post("/order/check_payment")
+async def check_payment(req: Request):
+    data = await req.json()
+    order_id = data.get("order_id")
+
+    order = next((o for o in ORDERS if o["id"] == order_id), None)
+    if not order or not order.get("payment_id"):
+        return {"ok": False}
+
+    try:
+        payment = Payment.find_one(order["payment_id"])
+    except Exception:
+        return {"ok": False}
+
+    if payment.status == "succeeded":
+        order["payment_status"] = "paid"
+        order["payout_status"] = "available"
+        return {"paid": True}
+
+    return {"paid": False}
 
 @app.post("/order/rate")
 async def rate_order(req: Request):
