@@ -234,6 +234,73 @@ textarea::placeholder{
   box-shadow: 0 0 0 4px rgba(250,204,21,.25);
 }
 
+/* ===== DARK CARD SYSTEM ===== */
+
+.dark-card{
+  padding:16px;
+  margin:14px 0;
+}
+
+.dark-card.glass{
+  background: rgba(2, 6, 23, 0.65);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 18px;
+  box-shadow:
+    0 8px 30px rgba(0,0,0,.45),
+    inset 0 1px 0 rgba(255,255,255,.05);
+}
+  box-shadow:0 8px 24px rgba(0,0,0,.35);
+}
+
+.badge{
+  background:#1e293b;
+  color:#c7d2fe;
+  padding:4px 10px;
+  border-radius:10px;
+  font-size:13px;
+}
+
+.muted{
+  opacity:.7;
+}
+
+.price-box{
+  background:#020617;
+  border:1px solid #1f2937;
+  border-radius:12px;
+  padding:14px;
+}
+
+/* FIX timeline light colors */
+.timeline{
+  border-left:3px solid #334155;
+}
+
+.timeline-step{
+  color:#cbd5f5;
+}
+
+.timeline-step::before{
+  background:#334155;
+}
+
+/* ===== GLASS EFFECT ===== */
+
+.glass{
+  background: rgba(2, 6, 23, 0.65); /* тёмное стекло */
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 18px;
+
+  box-shadow:
+    0 8px 30px rgba(0,0,0,.45),
+    inset 0 1px 0 rgba(255,255,255,.05);
+}
+
 </style>
 </head>
 <body>
@@ -329,9 +396,18 @@ function start(){
 function clientMenu(){
 
   if (window.location.search.includes("paid")) {
+
+    // 🔥 1. Убираем ?paid=1 навсегда
+    window.history.replaceState(
+      {},
+      document.title,
+      window.location.pathname
+    )
+
+    // 🔥 2. Один раз показываем "Мои заказы"
     setTimeout(() => {
       myOrders()
-    }, 1500)
+    }, 500)
   }
 
   screen.innerHTML = `
@@ -396,7 +472,7 @@ function renderLastOrder(list){
   const o = list[list.length - 1]
 
   box.innerHTML = `
-    <div style="background:#020617;padding:15px;border-radius:12px;margin:15px 0;">
+    <div class="dark-card glass">
       <b>${o.type}</b><br>
       ${o.address}<br>
       ${o.date} ${o.time}<br>
@@ -647,7 +723,7 @@ function supportForm(){
 
     <textarea id="supportText"
       placeholder="Опишите проблему или вопрос"
-      style="width:100%;height:120px;padding:12px;border-radius:10px;border:1px solid #ddd;font-size:16px"></textarea>
+      style="width:100%;height:120px;padding:12px;border-radius:10px;font-size:16px"></textarea>
 
     <div class="btn" onclick="tap(); sendSupport()">
       Отправить
@@ -692,9 +768,10 @@ function renderCleanerActive(list){
   const o = list[0]
 
 screen.innerHTML = `
-  <h3>🧹 Заказ #${o.id}</h3>
-
-  <b>${o.type}</b><br><br>
+  <div class="dark-card glass">
+    <h3>🧹 Заказ #${o.id}</h3>
+    <b>${o.type}</b><br><br>
+  </div>
 
   📍 <b>Адрес:</b> ${o.address}<br>
   📐 <b>Метраж:</b> ${o.area} м²<br>
@@ -857,7 +934,7 @@ function askContacts(){
     <textarea id="comment"
   placeholder="Комментарий для клинера (ключи, животные, пожелания)"
   style="width:100%;height:90px;padding:12px;
-         border-radius:10px;border:1px solid #ddd;
+         border-radius:10px;
          font-size:15px;margin-top:10px"></textarea>
     <div class="btn" onclick="tap(); goToExtras()">Далее</div>
     <div class="btn" onclick="tap(); chooseType()">Назад</div>
@@ -933,14 +1010,8 @@ function renderExtras(){
   }
 
   html += `
-    <div id="totalPriceBox"
-      style="
-        margin-top:20px;
-        padding:14px;
-        border-radius:12px;
-        background:#f0f7ff;
-        font-size:15px;
-      ">
+    <div id="totalPriceBox" class="price-box glass">
+
       <div>Базовая уборка: <b>${order.area * TARIFFS[order.type]} ₽</b></div>
       <div>Допы: <b>+${calcExtrasSum()} ₽</b></div>
       <hr style="margin:8px 0;opacity:.2">
@@ -1153,13 +1224,7 @@ function renderOrdersList(list){
      !o.photos_sent
 
     html += `
-      <div style="
-        border:1px solid #ddd;
-        padding:16px;
-        margin:14px 0;
-        border-radius:14px;
-        background:#fff;
-      ">
+      <div class="dark-card glass">
 
         <div style="
           display:flex;
@@ -1167,12 +1232,7 @@ function renderOrdersList(list){
           align-items:center;
         ">
           <b>${o.type}</b>
-          <span style="
-            background:#eef3ff;
-            padding:4px 10px;
-            border-radius:10px;
-            font-size:13px;
-          ">
+          <span class="badge">
             ${humanStatus(o.status)}
           </span>
         </div>
@@ -1309,7 +1369,6 @@ function cleanerForm(){
       padding:12px;
       margin-top:10px;
       border-radius:10px;
-      border:1px solid #ddd;
       font-size:15px;
     "></textarea>
 
@@ -1395,13 +1454,7 @@ function cleanerAvailable(){
   const extrasText = renderExtrasText(o.extras)
 
   html += `
-    <div style="
-      border:1px solid #ddd;
-      padding:14px;
-      margin:14px 0;
-      border-radius:14px;
-      background:#fff;
-    ">
+    <div class="dark-card glass">
 
       <div style="font-weight:600;font-size:16px">
         🧹 ${o.type}
