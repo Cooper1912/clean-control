@@ -154,7 +154,6 @@ textarea::placeholder{
   background:#38bdf8;
   box-shadow:0 0 0 4px rgba(56,189,248,.25);
 }
-</style>
 
 .row{display:flex;gap:10px}
 .small{flex:1}
