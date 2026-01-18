@@ -1015,6 +1015,7 @@ function changeExtra(name, delta){
       </div>
     `
   }
+}
 
 function send(){
   if (send.locked) return
