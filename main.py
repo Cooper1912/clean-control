@@ -56,11 +56,106 @@ async def webapp():
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
 <style>
-body{margin:0;background:#eef3f8;font-family:-apple-system;}
-.header{background:#0a84ff;color:white;padding:20px;text-align:center;font-size:20px;font-weight:600;}
-.card{background:white;margin:20px;padding:20px;border-radius:14px;}
-input,select{width:100%;padding:14px;margin-top:10px;border-radius:10px;border:1px solid #ddd;font-size:16px;}
-.btn{margin-top:15px;background:#0a84ff;color:white;text-align:center;padding:16px;border-radius:12px;font-weight:600;}
+/* ===== BASE ===== */
+body{
+  margin:0;
+  background:#0f172a; /* тёмный фон */
+  color:#e5e7eb;
+  font-family:-apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.header{
+  background:linear-gradient(135deg,#1e3a8a,#2563eb);
+  color:white;
+  padding:20px;
+  text-align:center;
+  font-size:20px;
+  font-weight:600;
+}
+
+/* ===== CARD ===== */
+.card{
+  background:#111827;
+  margin:20px;
+  padding:20px;
+  border-radius:16px;
+  box-shadow:0 10px 30px rgba(0,0,0,.4);
+}
+
+/* ===== INPUTS ===== */
+input, select, textarea{
+  width:100%;
+  padding:14px;
+  margin-top:10px;
+  border-radius:12px;
+  border:1px solid #1f2937;
+  background:#020617;
+  color:#e5e7eb;
+  font-size:16px;
+}
+
+input::placeholder,
+textarea::placeholder{
+  color:#64748b;
+}
+
+/* ===== BUTTONS ===== */
+.btn{
+  margin-top:15px;
+  background:linear-gradient(135deg,#2563eb,#1d4ed8);
+  color:white;
+  text-align:center;
+  padding:16px;
+  border-radius:14px;
+  font-weight:600;
+  cursor:pointer;
+  transition:.2s ease;
+}
+
+.btn:hover{
+  transform:translateY(-1px);
+  box-shadow:0 8px 20px rgba(37,99,235,.35);
+}
+
+/* ===== SMALL UI ===== */
+.row{display:flex;gap:10px}
+.small{flex:1}
+
+/* ===== TIMELINE ===== */
+.timeline{
+  border-left:3px solid #1e3a8a;
+  padding-left:14px;
+  margin:10px 0 5px 6px;
+}
+
+.timeline-step{
+  position:relative;
+  margin-bottom:10px;
+  font-size:14px;
+  color:#cbd5f5;
+}
+
+.timeline-step::before{
+  content:"";
+  position:absolute;
+  left:-11px;
+  top:4px;
+  width:10px;
+  height:10px;
+  border-radius:50%;
+  background:#334155;
+}
+
+.timeline-step.done::before{
+  background:#22c55e;
+}
+
+.timeline-step.current::before{
+  background:#38bdf8;
+  box-shadow:0 0 0 4px rgba(56,189,248,.25);
+}
+</style>
+
 .row{display:flex;gap:10px}
 .small{flex:1}
 
@@ -302,7 +397,7 @@ function renderLastOrder(list){
   const o = list[list.length - 1]
 
   box.innerHTML = `
-    <div style="background:#f0f7ff;padding:15px;border-radius:12px;margin:15px 0;">
+    <div style="background:#020617;padding:15px;border-radius:12px;margin:15px 0;">
       <b>${o.type}</b><br>
       ${o.address}<br>
       ${o.date} ${o.time}<br>
@@ -806,8 +901,23 @@ if(isNaN(parseInt(areaEl.value)) || parseInt(areaEl.value) <= 0){
 renderExtras()
 }
 
+function calcExtrasSum(){
+  let sum = 0
+  for(let k in order.extras){
+    if(EXTRAS[k]){
+      sum += EXTRAS[k] * order.extras[k]
+    }
+  }
+  return sum
+}
+
+function calcTotalPrice(){
+  const base = order.area * TARIFFS[order.type]
+  return base + calcExtrasSum()
+}
+
 function renderExtras(){
-  let html="<h3>Допы</h3>"
+  let html = "<h3>Допы</h3>"
 
   for(let k in EXTRAS){
     order.extras[k] = order.extras[k] || 0
@@ -823,11 +933,26 @@ function renderExtras(){
     `
   }
 
-  html += `<div style="margin-top:15px;font-weight:600;opacity:.6">
-  Итоговая стоимость будет показана перед оформлением
-</div>`
-  html += `<div class="btn" onclick="confirm()">Итог</div>`
-  html += `<div class="btn" onclick="askContacts()">Назад</div>`
+  html += `
+    <div id="totalPriceBox"
+      style="
+        margin-top:20px;
+        padding:14px;
+        border-radius:12px;
+        background:#f0f7ff;
+        font-size:15px;
+      ">
+      <div>Базовая уборка: <b>${order.area * TARIFFS[order.type]} ₽</b></div>
+      <div>Допы: <b>+${calcExtrasSum()} ₽</b></div>
+      <hr style="margin:8px 0;opacity:.2">
+      <div style="font-size:18px;font-weight:700">
+        Итого: ${calcTotalPrice()} ₽
+      </div>
+    </div>
+
+    <div class="btn" onclick="confirm()">Итог</div>
+    <div class="btn" onclick="askContacts()">Назад</div>
+  `
 
   screen.innerHTML = html
 }
@@ -876,10 +1001,21 @@ function changeExtra(name, delta){
   order.extras[name] += delta
 
   if(order.extras[name] < 0) order.extras[name] = 0
-  if(order.extras[name] > 10) order.extras[name] = 10   // защита от 100 окон
+  if(order.extras[name] > 10) order.extras[name] = 10
 
-  document.getElementById("count_"+name).innerText = order.extras[name]
-}
+  document.getElementById("count_" + name).innerText = order.extras[name]
+
+  const priceBox = document.getElementById("totalPriceBox")
+  if(priceBox){
+    priceBox.innerHTML = `
+      <div>Базовая уборка: <b>${order.area * TARIFFS[order.type]} ₽</b></div>
+      <div>Допы: <b>+${calcExtrasSum()} ₽</b></div>
+      <hr style="margin:8px 0;opacity:.2">
+      <div style="font-size:18px;font-weight:700">
+        Итого: ${calcTotalPrice()} ₽
+      </div>
+    `
+  }
 
 function send(){
   if (send.locked) return
